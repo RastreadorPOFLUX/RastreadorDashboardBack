@@ -35,6 +35,8 @@ Backend/
 - Python 3.8+
 - ESP32/ESP8266 conectado na rede local
 - Frontend React rodando (porta 3000 ou 5173)
+- Rustup instalado (link de instalação: https://rustup.rs/)
+- Visual Studio 2017 ou superior instalado
 
 ### 2. Instalação das Dependências
 
