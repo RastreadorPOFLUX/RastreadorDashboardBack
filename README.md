@@ -40,8 +40,23 @@ Backend/
 
 ```bash
 cd RastreadorDashboardBack
+```
+Crie uma máquina virtual no seu projeto:
+
+```bash
+python -m venv venv
+cd venv
+Scripts/activate.ps1 (para termianal powershell);
+Scripts/acrivate.bat (para terminal cmd).
+```
+
+Volte à pasta do projeto:
+
+```bash
 pip install -r requirements.txt
 ```
+
+Atenção! Não commite sua máquina virtual no repositório do github, crie um arquivo .gitignore e adicione as pastas do ambiente virtual nesse arquivo.
 
 ### 3. Configuração
 
