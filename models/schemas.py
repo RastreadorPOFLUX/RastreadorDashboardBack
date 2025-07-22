@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, IPvAnyAddress
 from typing import Optional, Dict, Any
 from enum import Enum
 
@@ -23,6 +23,10 @@ class ModeRequest(BaseModel):
             }
         }
 
+
+class DeviceRegistration(BaseModel):
+    device_id: str
+    ip: str
 
 class RTCAdjustRequest(BaseModel):
     """Request para ajustar RTC"""

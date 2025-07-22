@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class ESPCommunicator:
-    """Classe para comunicação com o ESP32/ESP8266 do rastreador solar"""
+    """Classe para comunicação com o ESP32 do rastreador solar"""
     
-    def __init__(self, esp_ip: str = "192.168.0.110", http_port: int = 80, ws_port: int = 81):
+    def __init__(self, esp_ip: str, http_port: int = 80, ws_port: int = 81):
         self.esp_ip = esp_ip
         self.http_port = http_port
         self.ws_port = ws_port

@@ -64,7 +64,7 @@ Atenção! Não commite sua máquina virtual no repositório do github, crie um 
 
 Edite o IP do ESP em `services/esp_communicator.py` se necessário:
 ```python
-def __init__(self, esp_ip: str = "192.168.0.101", ...):
+def __init__(self, esp_ip: str = "192.168.0.106", ...):
 ```
 
 ### 4. Execução

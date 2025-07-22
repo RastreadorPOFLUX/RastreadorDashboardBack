@@ -1,4 +1,6 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from datetime import datetime
+from ipaddress import ip_address
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -29,24 +31,46 @@ app.add_middleware(
 )
 
 # Inicializar serviços
-esp_communicator = ESPCommunicator()
+esp_communicator = None
+data_aggregator = None
 ws_manager = WSConnectionManager()
-data_aggregator = DataAggregator(esp_communicator)
 
-@app.on_event("startup")
-async def startup_event():
-    """Inicializar serviços ao iniciar a aplicação"""
-    # Iniciar coleta de dados em background
-    asyncio.create_task(data_aggregator.start_data_collection())
 
 @app.get("/")
 async def root():
     """Endpoint de saúde da API"""
     return {"message": "Rastreador Solar Dashboard API", "status": "online"}
 
+@app.post("/registerIP")
+async def register_esp_device(data: DeviceRegistration, request: Request):
+    """
+    Rota chamada pelo ESP para registrar seu IP dinamicamente.
+    """
+    global esp_communicator, data_aggregator
+
+    try:
+        parsed_ip = str(ip_address(data.ip))  # Valida se IP é válido
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"IP inválido: {data.ip}")
+
+    print(f"[INFO] Requisição recebida de {request.client.host}")
+    print(f"[INFO] Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
+
+    esp_communicator = ESPCommunicator(esp_ip=parsed_ip)
+    data_aggregator = DataAggregator(esp_communicator)
+
+    if await esp_communicator.check_connection():
+        asyncio.create_task(data_aggregator.start_data_collection())
+        print("[INFO] ESP registrado com sucesso.")
+        return {"status": "success", "message": f"ESP registrado com IP {parsed_ip}"}
+    else:
+        raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
+
 @app.get("/api/health")
 async def health_check():
-    """Verificar saúde do sistema"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    
     esp_status = await esp_communicator.check_connection()
     system_health = data_aggregator.get_system_health()
     
@@ -61,6 +85,8 @@ async def health_check():
 @app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
     """Obter dados de ângulos do sistema"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         return AnglesResponse(
@@ -74,6 +100,8 @@ async def get_angles():
 @app.get("/api/motor", response_model=MotorResponse)
 async def get_motor_data():
     """Obter dados do motor"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         motor_value = data.get("motor", 0)
@@ -87,6 +115,8 @@ async def get_motor_data():
 @app.get("/api/pid", response_model=PIDResponse)
 async def get_pid_data():
     """Obter dados do controlador PID"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         pid_data = data.get("pid_values", {})
@@ -106,6 +136,8 @@ async def get_pid_data():
 @app.get("/api/system-status", response_model=SystemStatusResponse)
 async def get_system_status():
     """Obter status geral do sistema"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         return SystemStatusResponse(
@@ -125,6 +157,8 @@ async def get_system_status():
 @app.get("/api/control-signals", response_model=ControlSignalsResponse)
 async def get_control_signals():
     """Obter sinais de controle do sistema"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         return ControlSignalsResponse(
@@ -139,6 +173,8 @@ async def get_control_signals():
 @app.get("/api/solar-irradiation", response_model=SolarIrradiationResponse)
 async def get_solar_irradiation():
     """Obter dados de irradiação solar (simulados por enquanto)"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         # Por enquanto, vamos simular dados baseados no ângulo solar
@@ -155,10 +191,13 @@ async def get_solar_irradiation():
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
 
 @app.get("/api/statistics")
 async def get_statistics():
     """Obter estatísticas do sistema"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         stats = data_aggregator.get_statistics()
         return stats
@@ -169,6 +208,8 @@ async def get_statistics():
 @app.patch("/api/mode")
 async def set_operation_mode(mode_request: ModeRequest):
     """Alterar modo de operação do sistema"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         success = await esp_communicator.set_mode(mode_request.mode)
         if success:
@@ -181,6 +222,8 @@ async def set_operation_mode(mode_request: ModeRequest):
 @app.patch("/api/rtc")
 async def adjust_rtc(rtc_request: RTCAdjustRequest):
     """Ajustar relógio do sistema"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         success = await esp_communicator.adjust_rtc(rtc_request.timestamp)
         if success:
@@ -194,6 +237,8 @@ async def adjust_rtc(rtc_request: RTCAdjustRequest):
 @app.get("/api/tracking-data")
 async def download_tracking_data():
     """Download de dados de rastreamento"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         csv_data = await esp_communicator.get_tracking_data()
         return JSONResponse(
@@ -206,6 +251,8 @@ async def download_tracking_data():
 @app.delete("/api/tracking-data")
 async def clear_tracking_data():
     """Limpar dados de rastreamento armazenados"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         success = await esp_communicator.clear_tracking_data()
         if success:
@@ -218,22 +265,29 @@ async def clear_tracking_data():
 @app.get("/api/data-history")
 async def get_data_history(limit: int = 100):
     """Obter histórico de dados"""
+    if data_aggregator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         history = data_aggregator.get_data_history(limit)
         return {"history": history, "count": len(history)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
 
 # WebSocket para dados em tempo real
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket para atualizações em tempo real"""
+    """WebSocket para atualizações em tempo real"""     
+    if data_aggregator is None:
+        await websocket.close(code=1011, reason="ESP não registrado")
+        return
+    
     await ws_manager.connect(websocket)
     try:
         while True:
             # Aguardar dados do cliente (opcional)
             await asyncio.sleep(1)
-            
+
             # Obter dados atuais
             current_data = await data_aggregator.get_current_data()
             
@@ -291,6 +345,8 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/api/weather/{city}", response_model=ClimateResponse)
 async def get_weather_proxy(city: str, api_key: str):
     """Proxy para API de clima externa"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         weather_data = await esp_communicator.get_weather_data(city, api_key)
         if weather_data:
