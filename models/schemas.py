@@ -15,11 +15,13 @@ class OperationMode(str, Enum):
 class ModeRequest(BaseModel):
     """Request para alterar modo de operação"""
     mode: OperationMode
+    manual_setpoint: int
     
     class Config:
         schema_extra = {
             "example": {
-                "mode": "auto"
+                "mode": "auto",
+                "manual_setpoint": 0
             }
         }
 

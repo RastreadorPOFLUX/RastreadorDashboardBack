@@ -211,9 +211,11 @@ async def set_operation_mode(mode_request: ModeRequest):
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        success = await esp_communicator.set_mode(mode_request.mode)
+        success = await esp_communicator.set_mode(mode_request.mode, mode_request.manual_setpoint)
         if success:
-            return {"status": "success", "mode": mode_request.mode}
+            return {"status": "success", 
+                    "mode": mode_request.mode,
+                    "manual_setpoint": mode_request.manual_setpoint}
         else:
             raise HTTPException(status_code=500, detail="Failed to set mode")
     except Exception as e:

@@ -40,10 +40,11 @@ class ESPCommunicator:
             logger.error(f"ESP connection check failed: {e}")
             return False
     
-    async def set_mode(self, mode: str) -> bool:
+    async def set_mode(self, mode: str, manualSetpoint: int) -> bool:
         """Configurar modo de operação do ESP"""
         try:
-            payload = {"mode": mode}
+            payload = {"mode": mode,
+                       "manual_setpoint": manualSetpoint}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.patch(
                     f"{self.base_url}/config",
