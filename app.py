@@ -72,7 +72,7 @@ async def health_check():
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     
     esp_status = await esp_communicator.check_connection()
-    system_health = data_aggregator.get_system_health()
+    system_health = await data_aggregator.get_system_health()
     
     return {
         "api_status": "online",

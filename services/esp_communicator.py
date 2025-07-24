@@ -31,13 +31,16 @@ class ESPCommunicator:
         self.reconnect_delay = 5
         
     async def check_connection(self) -> bool:
-        """Verificar se o ESP está acessível"""
+        """Verificar se o ESP está acessível via HTTP GET na raiz"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(f"{self.base_url}/")
                 return response.status_code == 200
+        except httpx.RequestError as e:
+            logger.error(f"Erro de conexão HTTP com ESP: {e}")
+            return False
         except Exception as e:
-            logger.error(f"ESP connection check failed: {e}")
+            logger.error(f"Erro inesperado ao checar conexão com ESP: {e}")
             return False
     
     async def set_mode(self, mode: str, manualSetpoint: int) -> bool:
@@ -241,10 +244,11 @@ class ESPCommunicator:
             self.is_websocket_connected = False
             return False
     
-    def get_connection_status(self) -> Dict[str, Any]:
+    async def get_connection_status(self) -> Dict[str, Any]:
         """Obter status das conexões"""
+        http_accessible = await self.check_connection()
         return {
-            "http_accessible": asyncio.run(self.check_connection()),
+            "http_accessible": http_accessible,
             "websocket_connected": self.is_websocket_connected,
             "last_data_timestamp": self.last_data.get("esp_clock", 0) if self.last_data else 0,
             "esp_ip": self.esp_ip,

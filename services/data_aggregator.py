@@ -281,7 +281,7 @@ class DataAggregator:
         self.data_history.clear()
         logger.info("Data history cleared")
     
-    def get_system_health(self) -> Dict[str, Any]:
+    async def get_system_health(self) -> Dict[str, Any]:
         """Obter saúde do sistema de agregação"""
         esp_status = self.esp_communicator.get_connection_status()
         
