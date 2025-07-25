@@ -15,32 +15,75 @@ logger = logging.getLogger(__name__)
 class ESPCommunicator:
     """Classe para comunicação com o ESP32 do rastreador solar"""
     
-    def __init__(self, esp_ip: str, http_port: int = 80, ws_port: int = 81):
+    def __init__(self, esp_ip: str, http_port: int = 80, ws_port: int = 81, device_id: str = None):
         self.esp_ip = esp_ip
         self.http_port = http_port
         self.ws_port = ws_port
+        self.device_id = device_id
         self.base_url = f"http://{esp_ip}:{http_port}"
         self.ws_url = f"ws://{esp_ip}:{ws_port}"
         self.timeout = httpx.Timeout(10.0)
         self.websocket = None
         self.is_websocket_connected = False
         self.last_data = {}
+        self.last_connection_check = 0
+        self.connection_check_interval = 5  # segundos
         
         # Configurações de reconexão
         self.max_reconnect_attempts = 5
         self.reconnect_delay = 5
+        self.connection_status = {"connected": False, "last_error": None}
         
+    async def _handle_connection_failure(self):
+        """Gerenciar falhas de conexão e tentar reconexão"""
+        logger.warning(f"Falha de conexão com ESP ({self.esp_ip}). Tentando reconectar...")
+        
+        for attempt in range(self.max_reconnect_attempts):
+            await asyncio.sleep(self.reconnect_delay)
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(f"{self.base_url}/")
+                    if response.status_code == 200:
+                        logger.info(f"Reconexão bem-sucedida com ESP ({self.esp_ip})")
+                        self.connection_status["connected"] = True
+                        return True
+            except Exception as e:
+                logger.error(f"Tentativa {attempt + 1} de reconexão falhou: {str(e)}")
+                
+        logger.error(f"Todas as tentativas de reconexão falharam para ESP ({self.esp_ip})")
+        return False
+
     async def check_connection(self) -> bool:
         """Verificar se o ESP está acessível via HTTP GET na raiz"""
+        current_time = time.time()
+        
+        # Evitar checagens muito frequentes
+        if current_time - self.last_connection_check < self.connection_check_interval:
+            return self.connection_status["connected"]
+            
+        self.last_connection_check = current_time
+        
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(f"{self.base_url}/")
-                return response.status_code == 200
+                if response.status_code == 200:
+                    self.connection_status["connected"] = True
+                    self.connection_status["last_error"] = None
+                    return True
+                else:
+                    raise httpx.RequestError(f"Status code: {response.status_code}")
+                    
         except httpx.RequestError as e:
             logger.error(f"Erro de conexão HTTP com ESP: {e}")
+            self.connection_status["connected"] = False
+            self.connection_status["last_error"] = str(e)
+            await self._handle_connection_failure()
             return False
         except Exception as e:
             logger.error(f"Erro inesperado ao checar conexão com ESP: {e}")
+            self.connection_status["connected"] = False
+            self.connection_status["last_error"] = str(e)
+            await self._handle_connection_failure()
             return False
     
     async def set_mode(self, mode: str, manualSetpoint: int) -> bool:
@@ -253,8 +296,39 @@ class ESPCommunicator:
             "last_data_timestamp": self.last_data.get("esp_clock", 0) if self.last_data else 0,
             "esp_ip": self.esp_ip,
             "base_url": self.base_url,
-            "ws_url": self.ws_url
+            "ws_url": self.ws_url,
+            "connection_status": self.connection_status,
+            "device_id": self.device_id
         }
+
+    async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
+        """Atualizar configurações de IP e porta do ESP e tentar estabelecer conexão"""
+        old_ip = self.esp_ip
+        self.esp_ip = new_ip
+        if device_id:
+            self.device_id = device_id
+        self.http_port = new_http_port
+        self.ws_port = new_ws_port
+        self.base_url = f"http://{new_ip}:{new_http_port}"
+        self.ws_url = f"ws://{new_ip}:{new_ws_port}"
+        
+        # Desconectar WebSocket existente se houver
+        if self.is_websocket_connected:
+            await self.disconnect_websocket()
+        
+        # Tentar estabelecer conexão com o novo IP
+        if await self.check_connection():
+            logger.info(f"ESP configuração atualizada e conectada: {self.base_url}, {self.ws_url}")
+            # Tentar reconectar WebSocket
+            if await self.connect_websocket():
+                return True
+        
+        # Reverter para o IP antigo se a conexão falhar
+        logger.error(f"Falha ao conectar com novo IP {new_ip}, revertendo para {old_ip}")
+        self.esp_ip = old_ip
+        self.base_url = f"http://{old_ip}:{self.http_port}"
+        self.ws_url = f"ws://{old_ip}:{self.ws_port}"
+        return False
     
     async def ping_esp(self) -> bool:
         """Fazer ping no ESP para verificar conectividade"""

@@ -6,8 +6,14 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import asyncio
 import json
+import time
+import logging
 from typing import Dict, Any
 import os
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Importações dos módulos locais
 from models.schemas import *
@@ -56,30 +62,96 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
     print(f"[INFO] Requisição recebida de {request.client.host}")
     print(f"[INFO] Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
 
-    esp_communicator = ESPCommunicator(esp_ip=parsed_ip)
-    data_aggregator = DataAggregator(esp_communicator)
+    if esp_communicator is None:
+        # Primeira conexão
+        esp_communicator = ESPCommunicator(esp_ip=parsed_ip, device_id=data.device_id)
+        data_aggregator = DataAggregator(esp_communicator)
+    else:
+        # Reconexão ou atualização de IP
+        if not await esp_communicator.update_esp_config(parsed_ip, device_id=data.device_id):
+            raise HTTPException(
+                status_code=400, 
+                detail="Falha ao atualizar conexão com o ESP no novo IP."
+            )
 
     if await esp_communicator.check_connection():
-        asyncio.create_task(data_aggregator.start_data_collection())
+        # Inicia coleta de dados se não estiver rodando
+        if data_aggregator and not data_aggregator.is_collecting:
+            asyncio.create_task(data_aggregator.start_data_collection())
         print("[INFO] ESP registrado com sucesso.")
-        return {"status": "success", "message": f"ESP registrado com IP {parsed_ip}"}
+        return {
+            "status": "success", 
+            "message": f"ESP registrado com IP {parsed_ip}",
+            "connection_info": await esp_communicator.get_connection_status()
+        }
     else:
         raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
 
 @app.get("/api/health")
 async def health_check():
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    
-    esp_status = await esp_communicator.check_connection()
-    system_health = await data_aggregator.get_system_health()
-    
-    return {
-        "api_status": "online",
-        "esp_status": esp_status,
-        "timestamp": data_aggregator.get_current_timestamp(),
-        "system_health": system_health
-    }
+    """Verificar saúde geral do sistema"""
+    try:
+        # Verifica se o ESP está registrado
+        if esp_communicator is None:
+            return {
+                "api_status": "online",
+                "esp_status": False,
+                "esp_registered": False,
+                "data_aggregator_status": False,
+                "timestamp": int(time.time()),
+                "system_health": {
+                    "status": "not_initialized",
+                    "message": "ESP não registrado"
+                }
+            }
+        
+        # Verifica conexão com ESP
+        esp_status = await esp_communicator.check_connection()
+        
+        # Verifica status do agregador de dados
+        if data_aggregator is None:
+            system_health = {
+                "status": "error",
+                "message": "Agregador de dados não inicializado"
+            }
+            current_timestamp = int(time.time())
+        else:
+            try:
+                system_health = await data_aggregator.get_system_health()
+                current_timestamp = data_aggregator.get_current_timestamp()
+            except Exception as e:
+                system_health = {
+                    "status": "error",
+                    "message": f"Erro ao obter saúde do sistema: {str(e)}"
+                }
+                current_timestamp = int(time.time())
+        
+        # Obtém informações detalhadas de conexão
+        connection_info = await esp_communicator.get_connection_status()
+        
+        return {
+            "api_status": "online",
+            "esp_status": esp_status,
+            "esp_registered": True,
+            "data_aggregator_status": data_aggregator is not None,
+            "timestamp": current_timestamp,
+            "system_health": system_health,
+            "connection_details": connection_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao verificar saúde do sistema: {str(e)}")
+        return {
+            "api_status": "error",
+            "esp_status": False,
+            "esp_registered": esp_communicator is not None,
+            "data_aggregator_status": data_aggregator is not None,
+            "timestamp": int(time.time()),
+            "system_health": {
+                "status": "error",
+                "message": f"Erro interno: {str(e)}"
+            }
+        }
 
 # Endpoints de dados em tempo real
 @app.get("/api/angles", response_model=AnglesResponse)
