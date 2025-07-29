@@ -12,16 +12,31 @@ class OperationMode(str, Enum):
 
 
 # Schemas de Request (entrada)
-class ModeRequest(BaseModel):
-    """Request para alterar modo de operação"""
-    mode: OperationMode
-    manual_setpoint: int
+
+class RTCAdjustRequest(BaseModel):
+    """Request para ajustar RTC"""
+    rtc: int = Field(..., description="Unix timestamp em segundos")
     
     class Config:
         schema_extra = {
             "example": {
+                "rtc": 1640995200
+            }
+        }
+class ModeRequest(BaseModel):
+    """Request para alterar modo de operação"""
+    mode: OperationMode
+    manual_setpoint: int
+    adjust: RTCAdjustRequest
+
+    class Config:
+        schema_extra = {
+            "example": {
                 "mode": "auto",
-                "manual_setpoint": 0
+                "manual_setpoint": 0,
+                "adjust":{
+                    "rtc": 1640995200
+                }
             }
         }
 
@@ -29,17 +44,6 @@ class ModeRequest(BaseModel):
 class DeviceRegistration(BaseModel):
     device_id: str
     ip: str
-
-class RTCAdjustRequest(BaseModel):
-    """Request para ajustar RTC"""
-    timestamp: int = Field(..., description="Unix timestamp em segundos")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "timestamp": 1640995200
-            }
-        }
 
 
 # Schemas de Response (saída)

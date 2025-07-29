@@ -90,7 +90,8 @@ class ESPCommunicator:
         """Configurar modo de operação do ESP"""
         try:
             payload = {"mode": mode,
-                       "manual_setpoint": manualSetpoint}
+                       "manual_setpoint": manualSetpoint,
+                       "adjust": {"rtc": int(datetime.now().timestamp())}}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.patch(
                     f"{self.base_url}/config",
@@ -107,25 +108,6 @@ class ESPCommunicator:
             logger.error(f"Error setting ESP mode: {e}")
             return False
     
-    async def adjust_rtc(self, timestamp: int) -> bool:
-        """Ajustar RTC do ESP"""
-        try:
-            payload = {"adjust": {"rtc": timestamp}}
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.patch(
-                    f"{self.base_url}/config",
-                    json=payload,
-                    headers={"Content-Type": "application/json"}
-                )
-                if response.status_code == 200:
-                    logger.info(f"ESP RTC adjusted to timestamp: {timestamp}")
-                    return True
-                else:
-                    logger.error(f"Failed to adjust ESP RTC. Status: {response.status_code}")
-                    return False
-        except Exception as e:
-            logger.error(f"Error adjusting ESP RTC: {e}")
-            return False
     
     async def get_tracking_data(self) -> str:
         """Baixar dados de rastreamento CSV do ESP"""

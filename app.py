@@ -287,23 +287,10 @@ async def set_operation_mode(mode_request: ModeRequest):
         if success:
             return {"status": "success", 
                     "mode": mode_request.mode,
-                    "manual_setpoint": mode_request.manual_setpoint}
+                    "manual_setpoint": mode_request.manual_setpoint,
+                    "adjusted_rtc": int(datetime.now().timestamp())}
         else:
             raise HTTPException(status_code=500, detail="Failed to set mode")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.patch("/api/rtc")
-async def adjust_rtc(rtc_request: RTCAdjustRequest):
-    """Ajustar relógio do sistema"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        success = await esp_communicator.adjust_rtc(rtc_request.timestamp)
-        if success:
-            return {"status": "success", "timestamp": rtc_request.timestamp}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to adjust RTC")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
