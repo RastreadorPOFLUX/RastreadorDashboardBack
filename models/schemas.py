@@ -49,16 +49,16 @@ class DeviceRegistration(BaseModel):
 # Schemas de Response (saída)
 class AnglesResponse(BaseModel):
     """Dados de ângulos para o componente AnglesCard"""
-    sunPosition: float = Field(..., description="Posição do sol em graus")
-    lensAngle: float = Field(..., description="Ângulo atual da lente em graus")
-    manualSetpoint: float = Field(..., description="Setpoint manual em graus")
+    sun_position: float = Field(..., description="Posição do sol em graus")
+    lens_angle: float = Field(..., description="Ângulo atual da lente em graus")
+    manual_setpoint: float = Field(..., description="Setpoint manual em graus")
     
     class Config:
         schema_extra = {
             "example": {
-                "sunPosition": 45.5,
-                "lensAngle": 43.2,
-                "manualSetpoint": 0.0
+                "sun_position": 0,
+                "lens_angle": 0,
+                "manual_setpoint": 0
             }
         }
 

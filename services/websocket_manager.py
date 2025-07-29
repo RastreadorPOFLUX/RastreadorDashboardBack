@@ -10,6 +10,16 @@ logger = logging.getLogger(__name__)
 
 
 class WSConnectionManager:
+    async def broadcast_angles(self, sun_position: float, lens_angle: float, manual_setpoint: float) -> None:
+        """Broadcast dos ângulos para todas as conexões WebSocket"""
+        message = {
+            "type": "angles_update",
+            "sun_position": sun_position,
+            "lens_angle": lens_angle,
+            "manual_setpoint": manual_setpoint,
+            "timestamp": int(asyncio.get_event_loop().time())
+        }
+        await self.broadcast_json(message)
     """Gerenciador de conexões WebSocket para comunicação em tempo real"""
     
     def __init__(self):

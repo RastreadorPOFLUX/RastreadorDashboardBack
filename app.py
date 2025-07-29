@@ -156,15 +156,31 @@ async def health_check():
 # Endpoints de dados em tempo real
 @app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
-    """Obter dados de ângulos do sistema"""
+    """Obter dados de ângulos reais do ESP32"""
     if data_aggregator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        data = await data_aggregator.get_current_data()
+        esp_data = data_aggregator.esp_communicator.get_last_data()
+        # Garante que nunca retorna None para os campos obrigatórios
+        sun_position = esp_data.get("sun_position")
+        if sun_position is None:
+            sun_position = 0.0
+        lens_angle = None
+        if "mpu" in esp_data and esp_data["mpu"] is not None:
+            lens_angle = esp_data["mpu"].get("lens_angle")
+        if lens_angle is None:
+            lens_angle = esp_data.get("lens_angle", 0.0)
+        if lens_angle is None:
+            lens_angle = 0.0
+        manual_setpoint = esp_data.get("manual_setpoint")
+        if manual_setpoint is None:
+            manual_setpoint = 0.0
+        # Broadcast para WebSocket
+        await ws_manager.broadcast_angles(float(sun_position), float(lens_angle), float(manual_setpoint))
         return AnglesResponse(
-            sunPosition=data.get("sun_position", 0),
-            lensAngle=data.get("mpu", {}).get("lens_angle", 0),
-            manualSetpoint=data.get("manual_setpoint", 0)
+            sun_position=float(sun_position),
+            lens_angle=float(lens_angle),
+            manual_setpoint=float(manual_setpoint)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
