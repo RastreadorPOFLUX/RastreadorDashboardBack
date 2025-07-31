@@ -3,13 +3,11 @@ from ipaddress import ip_address
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import httpx
 import uvicorn
 import asyncio
-import json
 import time
 import logging
-from typing import Dict, Any
-import os
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -136,18 +134,19 @@ async def health_check():
 @app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
     """Obter dados de ângulos reais do ESP32"""
-    if data_aggregator is None:
+    if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         # Obter dados atuais do agregador que inclui dados do WebSocket
-        esp_data = await data_aggregator.get_current_data()
+        esp_data =  await esp_communicator.get_angles_from_esp()
+        print(esp_data)
         
         # Extrair e validar os dados necessários
-        sun_position = esp_data.get("sun_position", 0.0)
-        lens_angle = esp_data.get("lens_angle", 0.0)  # Tenta direto primeiro
+        sun_position = esp_data.get("sunAngle", 0.0)
+        lens_angle = esp_data.get("lensAngle", 0.0)  # Tenta direto primeiro
         if lens_angle == 0.0:  # Se não encontrou, tenta dentro de mpu
-            lens_angle = esp_data.get("mpu", {}).get("lens_angle", 0.0)
-        manual_setpoint = esp_data.get("manual_setpoint", 0.0)
+            lens_angle = esp_data.get("mpu", {}).get("lensAngle", 0.0)
+        manual_setpoint = esp_data.get("manualSetpoint", 0.0)
         
         # Garantir que todos os valores são float
         angles_data = AnglesResponse(
@@ -211,8 +210,6 @@ async def get_system_status():
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
-        print(data)
-        print(esp_communicator.get_last_data())
         return SystemStatusResponse(
             mode=data.get("mode", "unknown"),
             esp_clock=data.get("esp_clock", 0),

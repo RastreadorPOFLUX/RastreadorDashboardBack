@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import time
-from typing import Dict, Any, Optional
-from datetime import datetime, timezone
+from typing import Dict, Any
+from datetime import datetime
 from services.esp_communicator import ESPCommunicator
 
 # Configurar logging
@@ -228,19 +228,12 @@ class DataAggregator:
     async def get_current_data(self) -> Dict[Any, Any]:
         """Obter dados atuais (com cache)"""
         current_time = time.time()
-        
         # Verificar cache
         if (current_time - self.last_update_time) < self.cache_duration and self.current_data:
             return self.current_data.copy()
-        
-        # Se não há dados atuais ou cache expirou, tentar obter do ESP
-        if not self.current_data:
-            esp_data = self.esp_communicator.get_last_data()
-            if esp_data:
-                await self.process_esp_data(esp_data)
-            else:
-                await self.process_esp_data(self.default_data)
-        
+        # Buscar ângulos diretamente do ESP
+        esp_data = await self.esp_communicator.get_angles_from_esp()
+        await self.process_esp_data(esp_data)
         self.last_update_time = current_time
         return self.current_data.copy() if self.current_data else self.default_data.copy()
     

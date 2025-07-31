@@ -3,7 +3,7 @@ import asyncio
 import websockets
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from datetime import datetime
 import time
 
@@ -292,6 +292,22 @@ class ESPCommunicator:
     def is_connected(self) -> bool:
         """Retorna True se ambas conexões (HTTP e WebSocket) estão ativas"""
         return self.connection_status["connected"] and self.is_websocket_connected
+
+    async def get_angles_from_esp(self) -> dict:
+        """Buscar os ângulos diretamente do ESP via HTTP GET /angles"""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/angles")
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Dados de ângulos recebidos do ESP: {data}")
+                    return data
+                else:
+                    logger.error(f"Falha ao obter ângulos do ESP. Status: {response.status_code}")
+                    return {"sun_position": 0.0, "lens_angle": 0.0, "manual_setpoint": 0.0}
+        except Exception as e:
+            logger.error(f"Erro ao buscar ângulos do ESP: {e}")
+            return {"sun_position": 0.0, "lens_angle": 0.0, "manual_setpoint": 0.0}
 
 
 # Função de conveniência para criar uma instância
