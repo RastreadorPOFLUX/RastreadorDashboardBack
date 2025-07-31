@@ -76,7 +76,7 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
 
     if await esp_communicator.check_connection():
         # Inicia coleta de dados se não estiver rodando
-        if data_aggregator and not data_aggregator.is_collecting:
+        if data_aggregator and not data_aggregator.is_running:
             asyncio.create_task(data_aggregator.start_data_collection())
         print("[INFO] ESP registrado com sucesso.")
         return {
@@ -91,7 +91,6 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
 async def health_check():
     """Verificar saúde geral do sistema"""
     try:
-        # Verifica se o ESP está registrado
         if esp_communicator is None:
             return {
                 "api_status": "online",
@@ -104,41 +103,21 @@ async def health_check():
                     "message": "ESP não registrado"
                 }
             }
-        
-        # Verifica conexão com ESP
         esp_status = await esp_communicator.check_connection()
-        
-        # Verifica status do agregador de dados
-        if data_aggregator is None:
-            system_health = {
-                "status": "error",
-                "message": "Agregador de dados não inicializado"
-            }
-            current_timestamp = int(time.time())
-        else:
-            try:
-                system_health = await data_aggregator.get_system_health()
-                current_timestamp = data_aggregator.get_current_timestamp()
-            except Exception as e:
-                system_health = {
-                    "status": "error",
-                    "message": f"Erro ao obter saúde do sistema: {str(e)}"
-                }
-                current_timestamp = int(time.time())
-        
-        # Obtém informações detalhadas de conexão
+        current_timestamp = int(time.time())
         connection_info = await esp_communicator.get_connection_status()
-        
         return {
             "api_status": "online",
             "esp_status": esp_status,
             "esp_registered": True,
             "data_aggregator_status": data_aggregator is not None,
             "timestamp": current_timestamp,
-            "system_health": system_health,
+            "system_health": {
+                "status": "ok" if esp_status else "error",
+                "message": "OK" if esp_status else "Erro de conexão"
+            },
             "connection_details": connection_info
         }
-        
     except Exception as e:
         logger.error(f"Erro ao verificar saúde do sistema: {str(e)}")
         return {
@@ -160,29 +139,33 @@ async def get_angles():
     if data_aggregator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        esp_data = data_aggregator.esp_communicator.get_last_data()
-        # Garante que nunca retorna None para os campos obrigatórios
-        sun_position = esp_data.get("sun_position")
-        if sun_position is None:
-            sun_position = 0.0
-        lens_angle = None
-        if "mpu" in esp_data and esp_data["mpu"] is not None:
-            lens_angle = esp_data["mpu"].get("lens_angle")
-        if lens_angle is None:
-            lens_angle = esp_data.get("lens_angle", 0.0)
-        if lens_angle is None:
-            lens_angle = 0.0
-        manual_setpoint = esp_data.get("manual_setpoint")
-        if manual_setpoint is None:
-            manual_setpoint = 0.0
-        # Broadcast para WebSocket
-        await ws_manager.broadcast_angles(float(sun_position), float(lens_angle), float(manual_setpoint))
-        return AnglesResponse(
+        # Obter dados atuais do agregador que inclui dados do WebSocket
+        esp_data = await data_aggregator.get_current_data()
+        
+        # Extrair e validar os dados necessários
+        sun_position = esp_data.get("sun_position", 0.0)
+        lens_angle = esp_data.get("lens_angle", 0.0)  # Tenta direto primeiro
+        if lens_angle == 0.0:  # Se não encontrou, tenta dentro de mpu
+            lens_angle = esp_data.get("mpu", {}).get("lens_angle", 0.0)
+        manual_setpoint = esp_data.get("manual_setpoint", 0.0)
+        
+        # Garantir que todos os valores são float
+        angles_data = AnglesResponse(
             sun_position=float(sun_position),
             lens_angle=float(lens_angle),
             manual_setpoint=float(manual_setpoint)
         )
+        
+        # Enviar dados via WebSocket para todos os clientes conectados
+        await ws_manager.broadcast_angles(
+            sun_position=angles_data.sun_position,
+            lens_angle=angles_data.lens_angle,
+            manual_setpoint=angles_data.manual_setpoint
+        )
+        
+        return angles_data
     except Exception as e:
+        logger.error(f"Erro ao obter dados de ângulos: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/motor", response_model=MotorResponse)
@@ -228,6 +211,8 @@ async def get_system_status():
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
+        print(data)
+        print(esp_communicator.get_last_data())
         return SystemStatusResponse(
             mode=data.get("mode", "unknown"),
             esp_clock=data.get("esp_clock", 0),
@@ -417,28 +402,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
         ws_manager.disconnect(websocket)
-
-# Proxy para API de clima (evitar problemas de CORS)
-@app.get("/api/weather/{city}", response_model=ClimateResponse)
-async def get_weather_proxy(city: str, api_key: str):
-    """Proxy para API de clima externa"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        weather_data = await esp_communicator.get_weather_data(city, api_key)
-        if weather_data:
-            return ClimateResponse(**weather_data)
-        else:
-            # Retornar dados simulados se API externa falhar
-            return ClimateResponse(
-                temperature=25.0,
-                humidity=60.0,
-                pressure=1013.25,
-                weather_description="Dados não disponíveis",
-                cloudiness=50.0
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # Endpoint para testar sem ESP (dados simulados)
 @app.get("/api/demo-data")

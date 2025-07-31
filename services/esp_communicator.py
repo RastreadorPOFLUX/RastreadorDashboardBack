@@ -108,37 +108,6 @@ class ESPCommunicator:
             logger.error(f"Error setting ESP mode: {e}")
             return False
     
-    
-    async def get_tracking_data(self) -> str:
-        """Baixar dados de rastreamento CSV do ESP"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/pof-lux/tracking")
-                if response.status_code == 200:
-                    logger.info("Tracking data downloaded successfully")
-                    return response.text
-                else:
-                    logger.error(f"Failed to download tracking data. Status: {response.status_code}")
-                    return ""
-        except Exception as e:
-            logger.error(f"Error downloading tracking data: {e}")
-            return ""
-    
-    async def clear_tracking_data(self) -> bool:
-        """Limpar dados de rastreamento do ESP"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.delete(f"{self.base_url}/pof-lux/clear_tracking")
-                if response.status_code == 200:
-                    logger.info("Tracking data cleared successfully")
-                    return True
-                else:
-                    logger.error(f"Failed to clear tracking data. Status: {response.status_code}")
-                    return False
-        except Exception as e:
-            logger.error(f"Error clearing tracking data: {e}")
-            return False
-    
     async def connect_websocket(self) -> bool:
         """Conectar ao WebSocket do ESP"""
         try:
@@ -221,68 +190,21 @@ class ESPCommunicator:
         
         logger.error(f"Max reconnection attempts ({self.max_reconnect_attempts}) reached")
     
-    async def get_weather_data(self, city: str, api_key: str) -> Dict[Any, Any]:
-        """Obter dados climáticos via API externa (proxy para evitar CORS)"""
-        try:
-            weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
-            
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(weather_url)
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Transformar dados para o formato esperado
-                    weather_data = {
-                        "temperature": data["main"]["temp"],
-                        "humidity": data["main"]["humidity"],
-                        "pressure": data["main"]["pressure"],
-                        "weather_description": data["weather"][0]["description"],
-                        "cloudiness": data["clouds"]["all"]
-                    }
-                    
-                    logger.info(f"Weather data retrieved for {city}")
-                    return weather_data
-                else:
-                    logger.error(f"Failed to get weather data. Status: {response.status_code}")
-                    return {}
-        except Exception as e:
-            logger.error(f"Error getting weather data: {e}")
-            return {}
-    
     def get_last_data(self) -> Dict[Any, Any]:
-        """Obter último conjunto de dados recebido"""
+        """Obter último conjunto de dados recebido, tentando atualizar via WebSocket se possível"""
+        # Se o WebSocket está conectado, tenta receber dados novos
+        if self.is_websocket_connected and self.websocket:
+            try:
+                # Tenta receber dados com timeout curto
+                import asyncio
+                loop = asyncio.get_event_loop()
+                raw_data = loop.run_until_complete(asyncio.wait_for(self.websocket.recv(), timeout=1.0))
+                data = json.loads(raw_data)
+                self.last_data = data
+            except Exception as e:
+                logger.warning(f"Não foi possível atualizar dados via WebSocket: {e}")
         return self.last_data.copy() if self.last_data else {}
     
-    async def send_websocket_command(self, command: Dict[Any, Any]) -> bool:
-        """Enviar comando via WebSocket para o ESP"""
-        if not self.is_websocket_connected or not self.websocket:
-            connected = await self.connect_websocket()
-            if not connected:
-                return False
-        
-        try:
-            await self.websocket.send(json.dumps(command))
-            logger.info(f"Command sent to ESP: {command}")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending command to ESP: {e}")
-            self.is_websocket_connected = False
-            return False
-    
-    async def get_connection_status(self) -> Dict[str, Any]:
-        """Obter status das conexões"""
-        http_accessible = await self.check_connection()
-        return {
-            "http_accessible": http_accessible,
-            "websocket_connected": self.is_websocket_connected,
-            "last_data_timestamp": self.last_data.get("esp_clock", 0) if self.last_data else 0,
-            "esp_ip": self.esp_ip,
-            "base_url": self.base_url,
-            "ws_url": self.ws_url,
-            "connection_status": self.connection_status,
-            "device_id": self.device_id
-        }
-
     async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
         """Atualizar configurações de IP e porta do ESP e tentar estabelecer conexão"""
         old_ip = self.esp_ip
@@ -342,9 +264,37 @@ class ESPCommunicator:
             asyncio.create_task(self.disconnect_websocket())
         
         logger.info(f"ESP configuration updated: {self.base_url}, {self.ws_url}")
+    
+    async def auto_connect(self):
+        """Tenta conectar automaticamente ao ESP32 via HTTP e WebSocket"""
+        # Tenta conexão HTTP
+        http_ok = await self.check_connection()
+        if not http_ok:
+            logger.error(f"Não foi possível conectar ao ESP32 via HTTP: {self.base_url}")
+            return False
+        # Tenta conexão WebSocket
+        ws_ok = await self.connect_websocket()
+        if not ws_ok:
+            logger.error(f"Não foi possível conectar ao ESP32 via WebSocket: {self.ws_url}")
+            return False
+        logger.info(f"Conexão automática com ESP32 bem-sucedida: {self.esp_ip}")
+        return True
+
+    async def ensure_connection(self):
+        """Garante que a conexão com o ESP32 está ativa, tentando reconectar se necessário"""
+        if not await self.check_connection():
+            logger.warning("Tentando reconexão HTTP com ESP32...")
+            await self._handle_connection_failure()
+        if not self.is_websocket_connected:
+            logger.warning("Tentando reconexão WebSocket com ESP32...")
+            await self.connect_websocket()
+
+    def is_connected(self) -> bool:
+        """Retorna True se ambas conexões (HTTP e WebSocket) estão ativas"""
+        return self.connection_status["connected"] and self.is_websocket_connected
 
 
 # Função de conveniência para criar uma instância
 def create_esp_communicator(esp_ip: str = "192.168.0.101") -> ESPCommunicator:
     """Criar uma instância do comunicador ESP com IP específico"""
-    return ESPCommunicator(esp_ip=esp_ip) 
+    return ESPCommunicator(esp_ip=esp_ip)

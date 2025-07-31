@@ -64,7 +64,19 @@ class DataAggregator:
         # Iniciar listener WebSocket em uma tarefa separada
         async def websocket_callback(data):
             """Callback para processar dados recebidos via WebSocket"""
-            await self.process_esp_data(data)
+            try:
+                # Garantir que os campos essenciais existam e sejam float
+                if "sun_position" in data:
+                    data["sun_position"] = float(data.get("sun_position", 0.0))
+                if "lens_angle" in data:
+                    data["lens_angle"] = float(data.get("lens_angle", 0.0))
+                if "manual_setpoint" in data:
+                    data["manual_setpoint"] = float(data.get("manual_setpoint", 0.0))
+                
+                await self.process_esp_data(data)
+                logger.debug("WebSocket data processed successfully")
+            except Exception as e:
+                logger.error(f"Error processing WebSocket data: {e}")
         
         # Criar tarefa para escutar WebSocket
         asyncio.create_task(
@@ -270,27 +282,3 @@ class DataAggregator:
     def get_current_timestamp(self) -> int:
         """Obter timestamp atual"""
         return int(time.time())
-    
-    async def force_data_refresh(self) -> Dict[Any, Any]:
-        """Forçar atualização de dados (ignorar cache)"""
-        self.last_update_time = 0
-        return await self.get_current_data()
-    
-    def clear_history(self) -> None:
-        """Limpar histórico de dados"""
-        self.data_history.clear()
-        logger.info("Data history cleared")
-    
-    async def get_system_health(self) -> Dict[str, Any]:
-        """Obter saúde do sistema de agregação"""
-        esp_status = self.esp_communicator.get_connection_status()
-        
-        return {
-            "aggregator_running": self.is_running,
-            "last_update": self.last_update_time,
-            "data_available": bool(self.current_data),
-            "history_size": len(self.data_history),
-            "esp_connection": esp_status,
-            "cache_duration": self.cache_duration,
-            "update_interval": self.update_interval
-        } 
