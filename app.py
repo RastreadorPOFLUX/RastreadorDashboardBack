@@ -131,40 +131,37 @@ async def health_check():
         }
 
 # Endpoints de dados em tempo real
-@app.get("/api/angles", response_model=AnglesResponse)
+@app.get("/api/angles", response_model=AnglesRequest)
 async def get_angles():
     """Obter dados de ângulos reais do ESP32"""
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         # Obter dados atuais do agregador que inclui dados do WebSocket
-        esp_data =  await esp_communicator.get_angles_from_esp()
-        print(esp_data)
+        esp_data =  await esp_communicator.get_pid_from_esp()
         
         # Extrair e validar os dados necessários
-        sun_position = esp_data.get("sunAngle", 0.0)
-        lens_angle = esp_data.get("lensAngle", 0.0)  # Tenta direto primeiro
-        if lens_angle == 0.0:  # Se não encontrou, tenta dentro de mpu
-            lens_angle = esp_data.get("mpu", {}).get("lensAngle", 0.0)
-        manual_setpoint = esp_data.get("manualSetpoint", 0.0)
+        kp = esp_data.get("kp", 0.0)
+        ki = esp_data.get("ki", 0.0)  
+        kd = esp_data.get("kd", 0.0)
         
         # Garantir que todos os valores são float
-        angles_data = AnglesResponse(
-            sun_position=float(sun_position),
-            lens_angle=float(lens_angle),
-            manual_setpoint=float(manual_setpoint)
+        pidParameters_data = PIDRequest(
+            kp=float(kp),
+            ki=float(ki),
+            kd=float(kd)
         )
         
         # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_angles(
-            sun_position=angles_data.sun_position,
-            lens_angle=angles_data.lens_angle,
-            manual_setpoint=angles_data.manual_setpoint
+        await ws_manager.broadcast_pid(
+            kp=pidParameters_data.kp,
+            ki=pidParameters_data.ki,
+            kd=pidParameters_data.kd
         )
         
-        return angles_data
+        return pidParameters_data
     except Exception as e:
-        logger.error(f"Erro ao obter dados de ângulos: {str(e)}")
+        logger.error(f"Erro ao obter dados de parâmtros PID: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/motor", response_model=MotorResponse)
@@ -182,23 +179,18 @@ async def get_motor_data():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/pid", response_model=PIDResponse)
+@app.get("/api/pid", response_model=PIDRequest)
 async def get_pid_data():
     """Obter dados do controlador PID"""
-    if data_aggregator is None:
+    if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
         pid_data = data.get("pid_values", {})
-        return PIDResponse(
+        return PIDRequest(
             kp=pid_data.get("kp", 0),
             ki=pid_data.get("ki", 0), 
             kd=pid_data.get("kd", 0),
-            p=pid_data.get("p", 0),
-            i=pid_data.get("i", 0),
-            d=pid_data.get("d", 0),
-            error=pid_data.get("error", 0),
-            output=pid_data.get("output", 0)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

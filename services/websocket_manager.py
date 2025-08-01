@@ -19,6 +19,20 @@ class WSConnectionManager:
             "timestamp": int(asyncio.get_event_loop().time())
         }
         await self.broadcast_json(message)
+
+
+    async def broadcast_pid(self, kp: float, ki: float, kd: float) -> None:
+        """Broadcast dos parâmetros pid para todas as conexões WebSocket"""
+        message = {
+            "type": "pid_update",
+            "kp": kp,
+            "ki": ki,
+            "kd": kd,
+            "timestamp": int(asyncio.get_event_loop().time())
+        }
+        await self.broadcast_json(message)
+
+
     """Gerenciador de conexões WebSocket para comunicação em tempo real"""
     
     def __init__(self):

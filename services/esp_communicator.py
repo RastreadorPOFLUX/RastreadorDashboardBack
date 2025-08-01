@@ -308,6 +308,23 @@ class ESPCommunicator:
         except Exception as e:
             logger.error(f"Erro ao buscar ângulos do ESP: {e}")
             return {"sun_position": 0.0, "lens_angle": 0.0, "manual_setpoint": 0.0}
+        
+    
+    async def get_pid_from_esp(self) -> dict:
+        """Buscar as constantes PID diretamente do ESP via HTTP GET /pidParameters"""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/pidParameters")
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Dados dos parâmetros PID recebidos do ESP: {data}")
+                    return data
+                else:
+                    logger.error(f"Falha ao obter parâmetros PID. Status: {response.status_code}")
+                    return {"kp": 0.0, "ki": 0.0, "kd": 0.0}
+        except Exception as e:
+            logger.error(f"Erro ao buscar parâmetros PID do ESP: {e}")
+            return {"kp": 0.0, "ki": 0.0, "kd": 0.0}
 
 
 # Função de conveniência para criar uma instância

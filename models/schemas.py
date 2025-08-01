@@ -23,6 +23,8 @@ class RTCAdjustRequest(BaseModel):
                 "rtc": 1640995200
             }
         }
+
+
 class ModeRequest(BaseModel):
     """Request para alterar modo de operação"""
     mode: OperationMode
@@ -47,7 +49,7 @@ class DeviceRegistration(BaseModel):
 
 
 # Schemas de Response (saída)
-class AnglesResponse(BaseModel):
+class AnglesRequest(BaseModel):
     """Dados de ângulos para o componente AnglesCard"""
     sun_position: float = Field(..., description="Posição do sol em graus")
     lens_angle: float = Field(..., description="Ângulo atual da lente em graus")
@@ -62,22 +64,7 @@ class AnglesResponse(BaseModel):
             }
         }
 
-
-class MotorResponse(BaseModel):
-    """Dados do motor para os componentes de potência"""
-    power: float = Field(..., description="Potência do motor em porcentagem (0-100)")
-    raw_value: int = Field(..., description="Valor bruto PWM (0-255)")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "power": 50.2,
-                "raw_value": 128
-            }
-        }
-
-
-class PIDResponse(BaseModel):
+class PIDRequest(BaseModel):
     """Dados do controlador PID"""
     kp: float = Field(..., description="Constante proporcional")
     ki: float = Field(..., description="Constante integral")
@@ -101,6 +88,22 @@ class PIDResponse(BaseModel):
                 "output": 128
             }
         }
+
+
+
+class MotorResponse(BaseModel):
+    """Dados do motor para os componentes de potência"""
+    power: float = Field(..., description="Potência do motor em porcentagem (0-100)")
+    raw_value: int = Field(..., description="Valor bruto PWM (0-255)")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "power": 50.2,
+                "raw_value": 128
+            }
+        }
+
 
 
 class SystemStatusResponse(BaseModel):
@@ -188,9 +191,9 @@ class ControlSignalsResponse(BaseModel):
 # Schema completo para WebSocket
 class WSMessage(BaseModel):
     """Mensagem completa do WebSocket"""
-    angles: AnglesResponse
+    angles: AnglesRequest
     motor: MotorResponse
-    pid: PIDResponse
+    pid: PIDRequest
     system_status: SystemStatusResponse
     control_signals: ControlSignalsResponse
     timestamp: int = Field(..., description="Timestamp da mensagem")
