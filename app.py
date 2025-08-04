@@ -84,32 +84,6 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
     else:
         raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
 
-
-@app.post("/api/adjustPid")
-async def adjust_pid(pid_request: PIDRequest):
-    """Ajustar parâmetros PID do ESP"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    
-    try:
-        # Validar e ajustar os valores PID
-        kp = pid_request.adjust.kp
-        ki = pid_request.adjust.ki
-        kd = pid_request.adjust.kd
-        
-        if not (0 <= kp <= 10 and 0 <= ki <= 10 and 0 <= kd <= 10):
-            raise HTTPException(status_code=400, detail="Valores PID fora dos limites permitidos.")
-        
-        success = await esp_communicator.set_pid_parameters(kp, ki, kd)
-        
-        if success:
-            return {"status": "success", "message": "Parâmetros PID ajustados com sucesso."}
-        else:
-            raise HTTPException(status_code=500, detail="Falha ao ajustar parâmetros PID no ESP.")
-    except Exception as e:
-        logger.error(f"Erro ao ajustar PID: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/health")
 async def health_check():
     """Verificar saúde geral do sistema"""
@@ -329,6 +303,34 @@ async def set_operation_mode(mode_request: ModeRequest):
             raise HTTPException(status_code=500, detail="Failed to set mode")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.patch("/api/adjustPid")
+async def adjust_pid(pid_request: PIDRequest):
+    """Ajustar parâmetros PID do ESP"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    
+    try:
+        # Validar e ajustar os valores PID
+        kp = pid_request.adjust.kp
+        ki = pid_request.adjust.ki
+        kd = pid_request.adjust.kd
+        
+        if not (0 <= kp <= 10 and 0 <= ki <= 10 and 0 <= kd <= 10):
+            raise HTTPException(status_code=400, detail="Valores PID fora dos limites permitidos.")
+        
+        success = await esp_communicator.set_pid_parameters(kp, ki, kd)
+        
+        if success:
+            return {"status": "success", "message": "Parâmetros PID ajustados com sucesso."}
+        else:
+            raise HTTPException(status_code=500, detail="Falha ao ajustar parâmetros PID no ESP.")
+    except Exception as e:
+        logger.error(f"Erro ao ajustar PID: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    
 
 # Endpoints de dados
 @app.get("/api/tracking-data")
