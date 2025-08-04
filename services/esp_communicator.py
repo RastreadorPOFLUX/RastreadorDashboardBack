@@ -294,10 +294,10 @@ class ESPCommunicator:
         return self.connection_status["connected"] and self.is_websocket_connected
 
     async def get_angles_from_esp(self) -> dict:
-        """Buscar os ângulos diretamente do ESP via HTTP GET /api/angles"""
+        """Buscar os ângulos diretamente do ESP via HTTP GET /angles"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/api/angles")
+                response = await client.get(f"{self.base_url}/angles")
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"Dados de ângulos recebidos do ESP: {data}")
@@ -311,10 +311,10 @@ class ESPCommunicator:
         
     
     async def get_pid_from_esp(self) -> dict:
-        """Buscar as constantes PID diretamente do ESP via HTTP GET /api/pid"""
+        """Buscar as constantes PID diretamente do ESP via HTTP GET /"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/api/pid")
+                response = await client.get(f"{self.base_url}/pidParameters")
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"Dados dos parâmetros PID recebidos do ESP: {data}")
@@ -327,12 +327,12 @@ class ESPCommunicator:
             return {"kp": 0.0, "ki": 0.0, "kd": 0.0}
         
     async def set_pid_parameters(self, kp: float, ki:float, kd:float) -> bool:
-        """Configurar os parâmetros PID do ESP via HTTP PATCH api/adjustPid"""
+        """Configurar os parâmetros PID do ESP via HTTP PATCH /config"""
         try:
             payload = {"adjust":{"kp": kp, "ki": ki, "kd": kd}}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.patch(
-                    f"{self.base_url}/api/adjustPid",
+                    f"{self.base_url}/config",
                     json=payload,
                     headers={"Content-Type": "application/json"}
                 )
