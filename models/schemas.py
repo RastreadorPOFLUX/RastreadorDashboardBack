@@ -64,7 +64,7 @@ class AnglesRequest(BaseModel):
             }
         }
 
-class PIDRequest(BaseModel):
+class ControlRequest(BaseModel):
     """Dados do controlador PID"""
     kp: float = Field(..., description="Constante proporcional")
     ki: float = Field(..., description="Constante integral")
@@ -89,7 +89,36 @@ class PIDRequest(BaseModel):
             }
         }
 
+class PIDAdjustRequest(BaseModel):
+    """Request para ajustar PID"""
+    kp: float = Field(..., description="Constante proporcional")
+    ki: float = Field(..., description="Constante integral")
+    kd: float = Field(..., description="Constante derivativa")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                    "kp": 2.0,
+                    "ki": 0.1,
+                    "kd": 0.05
+            }
+        }
 
+
+class PIDRequest(BaseModel):
+    """Request para ajustar PID com valores atuais"""
+    adjust: PIDAdjustRequest
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "adjust": {
+                    "kp": 2.0,
+                    "ki": 0.1,
+                    "kd": 0.05
+                }
+            }
+        } 
 
 class MotorResponse(BaseModel):
     """Dados do motor para os componentes de potência"""

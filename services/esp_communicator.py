@@ -294,10 +294,10 @@ class ESPCommunicator:
         return self.connection_status["connected"] and self.is_websocket_connected
 
     async def get_angles_from_esp(self) -> dict:
-        """Buscar os ângulos diretamente do ESP via HTTP GET /angles"""
+        """Buscar os ângulos diretamente do ESP via HTTP GET /api/angles"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/angles")
+                response = await client.get(f"{self.base_url}/api/angles")
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"Dados de ângulos recebidos do ESP: {data}")
@@ -311,10 +311,10 @@ class ESPCommunicator:
         
     
     async def get_pid_from_esp(self) -> dict:
-        """Buscar as constantes PID diretamente do ESP via HTTP GET /pidParameters"""
+        """Buscar as constantes PID diretamente do ESP via HTTP GET /api/pid"""
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/pidParameters")
+                response = await client.get(f"{self.base_url}/api/pid")
                 if response.status_code == 200:
                     data = response.json()
                     logger.info(f"Dados dos parâmetros PID recebidos do ESP: {data}")
@@ -325,6 +325,26 @@ class ESPCommunicator:
         except Exception as e:
             logger.error(f"Erro ao buscar parâmetros PID do ESP: {e}")
             return {"kp": 0.0, "ki": 0.0, "kd": 0.0}
+        
+    async def set_pid_parameters(self, kp: float, ki:float, kd:float) -> bool:
+        """Configurar os parâmetros PID do ESP via HTTP PATCH api/adjustPid"""
+        try:
+            payload = {"adjust":{"kp": kp, "ki": ki, "kd": kd}}
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.patch(
+                    f"{self.base_url}/api/adjustPid",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                if response.status_code == 200:
+                    logger.info(f"Parâmetros PID atualizados: {payload}")
+                    return True
+                else:
+                    logger.error(f"Falha ao atualizar parâmetros PID. Status: {response.status_code}")
+                    return False
+        except Exception as e:
+            logger.error(f"Erro ao atualizar parâmetros PID: {e}")
+            return False
 
 
 # Função de conveniência para criar uma instância
