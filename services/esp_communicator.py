@@ -332,7 +332,7 @@ class ESPCommunicator:
             payload = {"adjust":{"kp": kp, "ki": ki, "kd": kd}}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.patch(
-                    f"{self.base_url}/config",
+                    f"{self.base_url}/config/pidParameters",
                     json=payload,
                     headers={"Content-Type": "application/json"}
                 )

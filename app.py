@@ -166,7 +166,7 @@ async def get_angles():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/pid", response_model=ControlRequest)
+@app.get("/api/pid", response_model=PIDAdjustRequest)
 async def get_pid_data():
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
@@ -180,7 +180,7 @@ async def get_pid_data():
         kd = esp_data.get("kd", 0.0)
         
         # Garantir que todos os valores são float
-        pidParameters_data = ControlRequest(
+        pidParameters_data = PIDAdjustRequest(
             kp=float(kp),
             ki=float(ki),
             kd=float(kd)
