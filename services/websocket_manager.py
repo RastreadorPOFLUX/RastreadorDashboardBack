@@ -32,6 +32,16 @@ class WSConnectionManager:
         }
         await self.broadcast_json(message)
 
+    async def broadcast_motor(self, power: float, raw_value: int ) -> None:
+        """Broadcast potência do motor para todas as conexões WebSocket"""
+        message = {
+            "type": "motor_update",
+            "power": power,
+            "raw_value": raw_value,  # Converter de porcentagem para valor bruto
+            "timestamp": int(asyncio.get_event_loop().time())
+        }
+        await self.broadcast_json(message)
+
 
     """Gerenciador de conexões WebSocket para comunicação em tempo real"""
     

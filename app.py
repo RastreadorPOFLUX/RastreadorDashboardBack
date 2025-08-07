@@ -201,15 +201,24 @@ async def get_pid_data():
 @app.get("/api/motor", response_model=MotorResponse)
 async def get_motor_data():
     """Obter dados do motor"""
-    if data_aggregator is None:
+    if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        data = await data_aggregator.get_current_data()
-        motor_value = data.get("motor", 0)
-        return MotorResponse(
+        data = await esp_communicator.get_motor_power_from_esp()
+        motor_value = data.get("pwm", 0)
+
+        # Garantir que todos os valores são float
+        motor_data = MotorResponse(
+            power=round((motor_value / 255) * 100, 1),  # Converter para porcentagem
+            raw_value=int(motor_value)  # Valor bruto PWM
+        )
+
+        # Enviar dados via WebSocket para todos os clientes conectados
+        await ws_manager.broadcast_motor(
             power=round((motor_value / 255) * 100, 1),  # Converter para porcentagem
             raw_value=motor_value
-        )
+        ) 
+        return motor_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
