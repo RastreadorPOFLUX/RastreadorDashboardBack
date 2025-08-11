@@ -220,26 +220,21 @@ class ControlSignalsResponse(BaseModel):
 # Schema completo para WebSocket
 class WSMessage(BaseModel):
     """Mensagem completa do WebSocket"""
-    angles: AnglesRequest
-    motor: MotorResponse
-    pid: PIDRequest
-    system_status: SystemStatusResponse
-    control_signals: ControlSignalsResponse
-    timestamp: int = Field(..., description="Timestamp da mensagem")
-    
+    timestamp: int = Field(..., description="Timestamp da mensagem")  
     class Config:
         schema_extra = {
             "example": {
-                "angles": {
-                    "sunPosition": 45.5,
-                    "lensAngle": 43.2,
-                    "manualSetpoint": 0.0
+                "esp_clock": 1640995200,
+                "rtc": 1640995200,
+                "mpu": {
+                    "lens_angle": 0.0,
+                    "trusted_value": 0.0
                 },
-                "motor": {
-                    "power": 50.2,
-                    "raw_value": 128
-                },
-                "pid": {
+                "mode": "auto",
+                "manual_setpoint": 0.0,
+                "sunPosition": 45.5,
+                "lens_error_threshold": 5.0,
+                "pid_values": {
                     "kp": 2.0,
                     "ki": 0.1,
                     "kd": 0.05,
@@ -249,24 +244,7 @@ class WSMessage(BaseModel):
                     "error": 2.3,
                     "output": 128
                 },
-                "system_status": {
-                    "mode": "auto",
-                    "esp_clock": 1640995200,
-                    "rtc_day": 15,
-                    "rtc_month": 3,
-                    "rtc_year": 2024,
-                    "rtc_hour": 14,
-                    "rtc_minute": 30,
-                    "rtc_second": 45,
-                    "is_online": True
-                },
-                "control_signals": {
-                    "motor_direction": "CW",
-                    "tracking_enabled": True,
-                    "manual_override": False,
-                    "safety_stop": False
-                },
-                "timestamp": 1640995200
+                "motor": 50.2
             }
         }
 
