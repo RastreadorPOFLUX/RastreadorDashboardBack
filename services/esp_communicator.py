@@ -159,10 +159,13 @@ class ESPCommunicator:
             return None
     
     async def start_websocket_listener(self, data_callback=None) -> None:
-        """Iniciar escuta contínua do WebSocket do ESP"""
+        """
+        Inicia escuta contínua do WebSocket do ESP e garante que sempre haverá dados novos em tempo real.
+        Recomenda-se rodar este método como uma tarefa assíncrona logo após registrar o ESP.
+        """
         reconnect_attempts = 0
-        
-        while reconnect_attempts < self.max_reconnect_attempts:
+        logger.info("Iniciando listener WebSocket do ESP32...")
+        while True:
             try:
                 if not self.is_websocket_connected:
                     connected = await self.connect_websocket()
@@ -170,39 +173,28 @@ class ESPCommunicator:
                         reconnect_attempts += 1
                         await asyncio.sleep(self.reconnect_delay)
                         continue
-                
+
                 # Reset contador de reconexão em caso de sucesso
                 reconnect_attempts = 0
-                
+
                 while self.is_websocket_connected:
                     data = await self.listen_websocket_data()
                     if data and data_callback:
                         await data_callback(data)
-                    
-                    # Pequena pausa para não sobrecarregar
                     await asyncio.sleep(0.1)
-                    
+
             except Exception as e:
                 logger.error(f"Error in WebSocket listener: {e}")
                 self.is_websocket_connected = False
                 reconnect_attempts += 1
                 await asyncio.sleep(self.reconnect_delay)
-        
-        logger.error(f"Max reconnection attempts ({self.max_reconnect_attempts}) reached")
     
     def get_last_data(self) -> Dict[Any, Any]:
-        """Obter último conjunto de dados recebido, tentando atualizar via WebSocket se possível"""
-        # Se o WebSocket está conectado, tenta receber dados novos
-        if self.is_websocket_connected and self.websocket:
-            try:
-                # Tenta receber dados com timeout curto
-                import asyncio
-                loop = asyncio.get_event_loop()
-                raw_data = loop.run_until_complete(asyncio.wait_for(self.websocket.recv(), timeout=1.0))
-                data = json.loads(raw_data)
-                self.last_data = data
-            except Exception as e:
-                logger.warning(f"Não foi possível atualizar dados via WebSocket: {e}")
+        """
+        Retorna o último conjunto de dados recebido via WebSocket (atualizado pelo listener assíncrono).
+        Não tenta receber dados novos de forma síncrona!
+        """
+        print(self.last_data)
         return self.last_data if self.last_data else {}
     
     async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
