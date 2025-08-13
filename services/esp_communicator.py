@@ -203,7 +203,7 @@ class ESPCommunicator:
                 self.last_data = data
             except Exception as e:
                 logger.warning(f"Não foi possível atualizar dados via WebSocket: {e}")
-        return self.last_data.copy() if self.last_data else {}
+        return self.last_data if self.last_data else {}
     
     async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
         """Atualizar configurações de IP e porta do ESP e tentar estabelecer conexão"""

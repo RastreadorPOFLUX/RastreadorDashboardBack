@@ -2,7 +2,6 @@ from datetime import datetime
 from ipaddress import ip_address
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import uvicorn
 import asyncio
 import time
@@ -24,69 +23,65 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS para permitir comunicação com o frontend React
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # Vite e Create React App
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Inicializar serviços
+# Instâncias globais
 esp_communicator = None
 data_aggregator = None
 ws_manager = WSConnectionManager()
 
+# Cache para status de conexão
+_last_check_time = 0
+_last_check_status = False
+CHECK_INTERVAL = 3  # segundos
+
 
 @app.get("/")
 async def root():
-    """Endpoint de saúde da API"""
     return {"message": "Rastreador Solar Dashboard API", "status": "online"}
+
 
 @app.post("/registerIP")
 async def register_esp_device(data: DeviceRegistration, request: Request):
-    """
-    Rota chamada pelo ESP para registrar seu IP dinamicamente.
-    """
     global esp_communicator, data_aggregator
 
     try:
-        parsed_ip = str(ip_address(data.ip))  # Valida se IP é válido
+        parsed_ip = str(ip_address(data.ip))
     except ValueError:
         raise HTTPException(status_code=400, detail=f"IP inválido: {data.ip}")
 
-    print(f"[INFO] Requisição recebida de {request.client.host}")
-    print(f"[INFO] Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
+    logger.info(f"Requisição recebida de {request.client.host}")
+    logger.info(f"Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
 
     if esp_communicator is None:
-        # Primeira conexão
         esp_communicator = ESPCommunicator(esp_ip=parsed_ip, device_id=data.device_id)
         data_aggregator = DataAggregator(esp_communicator)
     else:
-        # Reconexão ou atualização de IP
         if not await esp_communicator.update_esp_config(parsed_ip, device_id=data.device_id):
-            raise HTTPException(
-                status_code=400, 
-                detail="Falha ao atualizar conexão com o ESP no novo IP."
-            )
+            raise HTTPException(status_code=400, detail="Falha ao atualizar conexão com o ESP.")
 
     if await esp_communicator.check_connection():
-        # Inicia coleta de dados se não estiver rodando
         if data_aggregator and not data_aggregator.is_running:
             asyncio.create_task(data_aggregator.start_data_collection())
-        print("[INFO] ESP registrado com sucesso.")
+        logger.info("ESP registrado com sucesso.")
         return {
-            "status": "success", 
+            "status": "success",
             "message": f"ESP registrado com IP {parsed_ip}",
             "connection_info": await esp_communicator.get_connection_status()
         }
     else:
         raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
 
+
 @app.get("/api/health")
 async def health_check():
-    """Verificar saúde geral do sistema"""
     try:
         if esp_communicator is None:
             return {
@@ -95,139 +90,73 @@ async def health_check():
                 "esp_registered": False,
                 "data_aggregator_status": False,
                 "timestamp": int(time.time()),
-                "system_health": {
-                    "status": "not_initialized",
-                    "message": "ESP não registrado"
-                }
+                "system_health": {"status": "not_initialized", "message": "ESP não registrado"}
             }
         esp_status = await esp_communicator.check_connection()
-        current_timestamp = int(time.time())
-        connection_info = await esp_communicator.get_connection_status()
         return {
             "api_status": "online",
             "esp_status": esp_status,
             "esp_registered": True,
             "data_aggregator_status": data_aggregator is not None,
-            "timestamp": current_timestamp,
-            "system_health": {
-                "status": "ok" if esp_status else "error",
-                "message": "OK" if esp_status else "Erro de conexão"
-            },
-            "connection_details": connection_info
+            "timestamp": int(time.time()),
+            "system_health": {"status": "ok" if esp_status else "error", "message": "OK" if esp_status else "Erro de conexão"},
+            "connection_details": await esp_communicator.get_connection_status()
         }
     except Exception as e:
         logger.error(f"Erro ao verificar saúde do sistema: {str(e)}")
-        return {
-            "api_status": "error",
-            "esp_status": False,
-            "esp_registered": esp_communicator is not None,
-            "data_aggregator_status": data_aggregator is not None,
-            "timestamp": int(time.time()),
-            "system_health": {
-                "status": "error",
-                "message": f"Erro interno: {str(e)}"
-            }
-        }
+        return {"api_status": "error", "esp_status": False, "error": str(e)}
 
-# Endpoints de dados em tempo real
+
 @app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
-    """Obter dados de ângulos reais do ESP32"""
-    if esp_communicator is None:
+    if data_aggregator is None or esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        # Obter dados atuais do agregador que inclui dados do WebSocket
-        esp_data =  await esp_communicator.get_angles_from_esp()
-        
-        # Extrair e validar os dados necessários
-        sun_position = esp_data.get("sunAngle", 0.0)
-        lens_angle = esp_data.get("lensAngle", 0.0)  
-        if lens_angle == 0.0: 
-            lens_angle = esp_data.get("mpu", {}).get("lensAngle", 0.0)
-        manual_setpoint = esp_data.get("manualSetpoint", 0.0)
-        
-        # Garantir que todos os valores são float
-        angles_data = AnglesResponse(
-            sun_position=float(sun_position),
-            lens_angle=float(lens_angle),
-            manual_setpoint=float(manual_setpoint)
+        esp_data = await esp_communicator.get_angles_from_esp()
+        return AnglesResponse(
+            sun_position=float(esp_data.get("sunAngle", 0.0)),
+            lens_angle=float(esp_data.get("lensAngle", esp_data.get("mpu", {}).get("lensAngle", 0.0))),
+            manual_setpoint=float(esp_data.get("manualSetpoint", 0.0))
         )
-        
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_angles(
-            sun_position=angles_data.sun_position,
-            lens_angle=angles_data.lens_angle,
-            manual_setpoint=angles_data.manual_setpoint
-        )
-        
-        return angles_data
     except Exception as e:
-        logger.error(f"Erro ao obter dados de ângulos: {str(e)}")
+        logger.error(f"Erro ao obter ângulos: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/pid", response_model=PIDAdjustResponse)
 async def get_pid_data():
-    if esp_communicator is None:
+    if data_aggregator is None or esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        # Obter dados atuais do agregador que inclui dados do WebSocket
-        esp_data =  await esp_communicator.get_pid_from_esp()
-        
-        # Extrair e validar os dados necessários
-        kp = esp_data.get("kp", 0.0)
-        ki = esp_data.get("ki", 0.0)  
-        kd = esp_data.get("kd", 0.0)
-        
-        # Garantir que todos os valores são float
-        pidParameters_data = PIDAdjustResponse(
-            kp=float(kp),
-            ki=float(ki),
-            kd=float(kd)
+        esp_data = await esp_communicator.get_pid_from_esp()
+        return PIDAdjustResponse(
+            kp=float(esp_data.get("kp", 0.0)),
+            ki=float(esp_data.get("ki", 0.0)),
+            kd=float(esp_data.get("kd", 0.0))
         )
-        
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_pid(
-            kp=pidParameters_data.kp,
-            ki=pidParameters_data.ki,
-            kd=pidParameters_data.kd
-        ) 
-        return pidParameters_data
     except Exception as e:
-        logger.error(f"Erro ao obter dados de parâmtros PID: {str(e)}")
+        logger.error(f"Erro ao obter PID: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/motor", response_model=MotorResponse)
 async def get_motor_data():
-    """Obter dados do motor"""
-    if esp_communicator is None:
+    if data_aggregator is None or esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await esp_communicator.get_motor_power_from_esp()
         motor_value = data.get("pwm", 0)
-
-        # Garantir que todos os valores são float
-        motor_data = MotorResponse(
-            power=round((motor_value / 255) * 100, 1),  # Converter para porcentagem
-            raw_value=int(motor_value)  # Valor bruto PWM
+        return MotorResponse(
+            power=round((motor_value / 255) * 100, 1),
+            raw_value=int(motor_value)
         )
-
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_motor(
-            power=round((motor_value / 255) * 100, 1),  # Converter para porcentagem
-            raw_value=motor_value
-        ) 
-        return motor_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
 
 
 @app.get("/api/system-status", response_model=SystemStatusResponse)
 async def get_system_status():
-    """Obter status geral do sistema"""
-    if data_aggregator is None:
+    if data_aggregator is None or esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
         data = await data_aggregator.get_current_data()
@@ -246,71 +175,59 @@ async def get_system_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Endpoints de controle
 @app.patch("/api/mode")
 async def set_operation_mode(mode_request: ModeRequest):
-    """Alterar modo de operação do sistema"""
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        success = await esp_communicator.set_mode(mode_request.mode, mode_request.manual_setpoint)
-        if success:
-            return {"status": "success", 
-                    "mode": mode_request.mode,
-                    "manual_setpoint": mode_request.manual_setpoint,
-                    "adjusted_rtc": int(datetime.now().timestamp())}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to set mode")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+    success = await esp_communicator.set_mode(mode_request.mode, mode_request.manual_setpoint)
+    if success:
+        return {"status": "success", "mode": mode_request.mode, "manual_setpoint": mode_request.manual_setpoint}
+    else:
+        raise HTTPException(status_code=500, detail="Falha ao alterar modo.")
+
 
 @app.patch("/api/adjustPid")
 async def adjust_pid(pid_request: PIDResponse):
-    """Ajustar parâmetros PID do ESP"""
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
-    
-    try:
-        # Validar e ajustar os valores PID
-        kp = pid_request.adjust.kp
-        ki = pid_request.adjust.ki
-        kd = pid_request.adjust.kd
-        
-        if not (0 <= kp <= 10 and 0 <= ki <= 10 and 0 <= kd <= 10):
-            raise HTTPException(status_code=400, detail="Valores PID fora dos limites permitidos.")
-        
-        success = await esp_communicator.set_pid_parameters(kp, ki, kd)
-        
-        if success:
-            return {"status": "success", "message": "Parâmetros PID ajustados com sucesso."}
-        else:
-            raise HTTPException(status_code=500, detail="Falha ao ajustar parâmetros PID no ESP.")
-    except Exception as e:
-        logger.error(f"Erro ao ajustar PID: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
-    
+    kp, ki, kd = pid_request.adjust.kp, pid_request.adjust.ki, pid_request.adjust.kd
+    if not (0 <= kp <= 10 and 0 <= ki <= 10 and 0 <= kd <= 10):
+        raise HTTPException(status_code=400, detail="Valores PID fora dos limites.")
+    success = await esp_communicator.set_pid_parameters(kp, ki, kd)
+    if success:
+        return {"status": "success", "message": "Parâmetros PID ajustados."}
+    else:
+        raise HTTPException(status_code=500, detail="Falha ao ajustar PID.")
 
-# WebSocket para dados em tempo real
+
+# WebSocket
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket para atualizações em tempo real"""     
-    if data_aggregator is None:
-        await websocket.close(code=1011, reason="ESP não registrado")
-        return
-    
+    global _last_check_time, _last_check_status
     await ws_manager.connect(websocket)
+
     try:
         while True:
-            # Aguardar dados do cliente (opcional)
-            await asyncio.sleep(1)
+            if data_aggregator is None or esp_communicator is None:
+                await ws_manager.send_personal_json_message(
+                    {"system_status": {"is_online": False, "message": "ESP não registrado"}},
+                    websocket
+                )
+                await asyncio.sleep(1)
+                continue
 
-            # Obter dados atuais
+            # Cache de conexão
+            now = time.time()
+            if now - _last_check_time > CHECK_INTERVAL:
+                try:
+                    _last_check_status = await esp_communicator.check_connection()
+                except Exception as e:
+                    logger.error(f"Erro check_connection: {e}")
+                    _last_check_status = False
+                _last_check_time = now
+
             current_data = await data_aggregator.get_current_data()
-            
-            # Estruturar dados para o WebSocket
-            ws_data = {
+            ws_data =  {
                 "angles": {
                     "sunPosition": current_data.get("sun_position", 0),
                     "lensAngle": current_data.get("mpu", {}).get("lens_angle", 0),
@@ -343,14 +260,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 },
                 "timestamp": current_data.get("processed_timestamp", data_aggregator.get_current_timestamp())
             }
-            
-            # Enviar dados para o cliente
+
             await ws_manager.send_personal_json_message(ws_data, websocket)
-            
+            await asyncio.sleep(0.5)
+
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}")
         ws_manager.disconnect(websocket)
 
 

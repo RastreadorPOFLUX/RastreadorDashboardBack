@@ -1,191 +1,59 @@
-from fastapi import WebSocket
-from typing import List, Dict, Any
 import asyncio
 import logging
+from fastapi import WebSocket, WebSocketDisconnect
 
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+logging.basicConfig(level=logging.INFO)
 
 class WSConnectionManager:
-    async def broadcast_angles(self, sun_position: float, lens_angle: float, manual_setpoint: float) -> None:
-        """Broadcast dos ângulos para todas as conexões WebSocket"""
-        message = {
-            "type": "angles_update",
-            "sun_position": sun_position,
-            "lens_angle": lens_angle,
-            "manual_setpoint": manual_setpoint,
-            "timestamp": int(asyncio.get_event_loop().time())
-        }
-        await self.broadcast_json(message)
+    """Gerencia conexões WebSocket ativas de forma segura"""
 
-
-    async def broadcast_pid(self, kp: float, ki: float, kd: float) -> None:
-        """Broadcast dos parâmetros pid para todas as conexões WebSocket"""
-        message = {
-            "type": "pid_update",
-            "kp": kp,
-            "ki": ki,
-            "kd": kd,
-            "timestamp": int(asyncio.get_event_loop().time())
-        }
-        await self.broadcast_json(message)
-
-    async def broadcast_motor(self, power: float, raw_value: int ) -> None:
-        """Broadcast potência do motor para todas as conexões WebSocket"""
-        message = {
-            "type": "motor_update",
-            "power": power,
-            "raw_value": raw_value,  # Converter de porcentagem para valor bruto
-            "timestamp": int(asyncio.get_event_loop().time())
-        }
-        await self.broadcast_json(message)
-
-
-    """Gerenciador de conexões WebSocket para comunicação em tempo real"""
-    
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
-        self.connection_count = 0
-    
-    async def connect(self, websocket: WebSocket) -> None:
-        """Aceitar nova conexão WebSocket"""
-        try:
-            await websocket.accept()
-            self.active_connections.append(websocket)
-            self.connection_count += 1
-            logger.info(f"New WebSocket connection. Total connections: {len(self.active_connections)}")
-        except Exception as e:
-            logger.error(f"Error accepting WebSocket connection: {e}")
-    
-    def disconnect(self, websocket: WebSocket) -> None:
-        """Remover conexão WebSocket"""
-        try:
-            if websocket in self.active_connections:
-                self.active_connections.remove(websocket)
-            logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
-        except Exception as e:
-            logger.error(f"Error disconnecting WebSocket: {e}")
-    
-    async def send_personal_message(self, message: str, websocket: WebSocket) -> None:
-        """Enviar mensagem de texto para uma conexão específica"""
-        try:
-            await websocket.send_text(message)
-        except Exception as e:
-            logger.error(f"Error sending text message: {e}")
-            self.disconnect(websocket)
-    
-    async def send_personal_json_message(self, message: Dict[Any, Any], websocket: WebSocket) -> None:
-        """Enviar mensagem JSON para uma conexão específica"""
-        try:
-            await websocket.send_json(message)
-        except Exception as e:
-            logger.error(f"Error sending JSON message: {e}")
-            self.disconnect(websocket)
-    
-    async def broadcast_text(self, message: str) -> None:
-        """Enviar mensagem de texto para todas as conexões ativas"""
-        if not self.active_connections:
-            return
-        
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_text(message)
-            except Exception as e:
-                logger.error(f"Error broadcasting text message: {e}")
-                disconnected.append(connection)
-        
-        # Remover conexões desconectadas
-        for conn in disconnected:
-            self.disconnect(conn)
-    
-    async def broadcast_json(self, message: Dict[Any, Any]) -> None:
-        """Enviar mensagem JSON para todas as conexões ativas"""
-        if not self.active_connections:
-            return
-        
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception as e:
-                logger.error(f"Error broadcasting JSON message: {e}")
-                disconnected.append(connection)
-        
-        # Remover conexões desconectadas
-        for conn in disconnected:
-            self.disconnect(conn)
-    
-    async def send_to_all_except(self, message: Dict[Any, Any], exclude_websocket: WebSocket) -> None:
-        """Enviar mensagem para todas as conexões exceto uma específica"""
-        if not self.active_connections:
-            return
-        
-        disconnected = []
-        for connection in self.active_connections:
-            if connection != exclude_websocket:
-                try:
-                    await connection.send_json(message)
-                except Exception as e:
-                    logger.error(f"Error sending message to all except one: {e}")
-                    disconnected.append(connection)
-        
-        # Remover conexões desconectadas
-        for conn in disconnected:
-            self.disconnect(conn)
-    
-    def get_active_connections_count(self) -> int:
-        """Retornar número de conexões ativas"""
-        return len(self.active_connections)
-    
-    def is_connected(self) -> bool:
-        """Verificar se há pelo menos uma conexão ativa"""
-        return len(self.active_connections) > 0
-    
-    async def ping_all_connections(self) -> None:
-        """Enviar ping para todas as conexões para verificar se estão ativas"""
-        if not self.active_connections:
-            return
-        
-        ping_message = {"type": "ping", "timestamp": int(asyncio.get_event_loop().time())}
-        await self.broadcast_json(ping_message)
-    
-    async def send_system_notification(self, notification_type: str, message: str) -> None:
-        """Enviar notificação do sistema para todas as conexões"""
-        notification = {
-            "type": "system_notification",
-            "notification_type": notification_type,
-            "message": message,
-            "timestamp": int(asyncio.get_event_loop().time())
-        }
-        await self.broadcast_json(notification)
-    
-    async def cleanup_dead_connections(self) -> None:
-        """Limpar conexões mortas (rotina de manutenção)"""
-        if not self.active_connections:
-            return
-        
-        alive_connections = []
-        for connection in self.active_connections:
-            try:
-                # Tentar enviar um ping simples
-                await connection.ping()
-                alive_connections.append(connection)
-            except Exception:
-                logger.info("Removing dead WebSocket connection")
-        
-        self.active_connections = alive_connections
-    
-    def get_connection_stats(self) -> Dict[str, Any]:
-        """Obter estatísticas das conexões"""
-        return {
-            "active_connections": len(self.active_connections),
-            "total_connections_created": self.connection_count,
-            "has_active_connections": self.is_connected()
-        }
+        self.active_connections: set[WebSocket] = set()
 
+    async def connect(self, websocket: WebSocket):
+        """Aceita uma nova conexão WebSocket e registra"""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        logger.info(f"WebSocket conectado. Total: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        """Remove conexão do manager"""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket desconectado. Total: {len(self.active_connections)}")
+
+    async def send_personal_json_message(self, message: dict, websocket: WebSocket):
+        """Envia mensagem JSON para um WebSocket específico de forma segura"""
+        try:
+            if websocket.client_state.name != "CONNECTED":
+                logger.warning("Tentativa de enviar mensagem para WebSocket desconectado")
+                self.disconnect(websocket)
+                return
+            await websocket.send_json(message)
+        except WebSocketDisconnect:
+            logger.warning("WebSocketDisconnect detectado ao enviar mensagem")
+            self.disconnect(websocket)
+        except Exception as e:
+            logger.error(f"Erro ao enviar mensagem pelo WebSocket: {e}")
+            self.disconnect(websocket)
+
+    async def broadcast(self, message: dict):
+        """Envia mensagem para todos os WebSockets ativos"""
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                if connection.client_state.name == "CONNECTED":
+                    await connection.send_json(message)
+                else:
+                    disconnected.append(connection)
+            except WebSocketDisconnect:
+                disconnected.append(connection)
+            except Exception as e:
+                logger.error(f"Erro ao enviar mensagem no broadcast: {e}")
+                disconnected.append(connection)
+        for conn in disconnected:
+            self.disconnect(conn)
 
 # Instância global do gerenciador
 manager = WSConnectionManager()
