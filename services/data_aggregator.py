@@ -52,49 +52,35 @@ class DataAggregator:
     async def start_data_collection(self) -> None:
         """Iniciar coleta contínua de dados do ESP"""
         if self.is_running:
-            logger.warning("Data collection already running")
+            logger.warning("Data collection já está em execução")
             return
-        
+
         self.is_running = True
-        logger.info("Starting data collection from ESP")
-        
-        # Iniciar listener WebSocket em uma tarefa separada
+        logger.info("Iniciando coleta de dados do ESP")
+
+        # Callback para WebSocket
         async def websocket_callback(data: Dict[str, Any]):
-            """Callback para processar dados recebidos via WebSocket"""
-            try:
-                # Garantir que os campos essenciais existam e sejam float
-                if "sun_position" in data:
-                    data["sun_position"] = float(data.get("sun_position", 0.0))
-                if "lens_angle" in data:
-                    data["lens_angle"] = float(data.get("lens_angle", 0.0))
-                if "manual_setpoint" in data:
-                    data["manual_setpoint"] = float(data.get("manual_setpoint", 0.0))
-                
-                await self.process_esp_data(data)
-            except Exception as e:
-                logger.error(f"Error processing WebSocket data: {e}")
-        
-        # Criar tarefa para escutar WebSocket
+            await self.process_esp_data(data)
+
+        # Listener WebSocket em paralelo
         asyncio.create_task(
             self.esp_communicator.start_websocket_listener(websocket_callback)
         )
-        
-        # Loop principal de coleta de dados
+
+        # Loop de fallback — usa último dado conhecido ou default
         while self.is_running:
             try:
-                # Pegar último dado do ESP
                 last_esp_data = self.esp_communicator.get_last_data()
-                
                 if last_esp_data:
                     await self.process_esp_data(last_esp_data)
                 else:
                     await self.process_esp_data(self.default_data)
-                
+
                 await asyncio.sleep(self.update_interval)
-                
+
             except Exception as e:
-                logger.error(f"Error in data collection loop: {e}")
-                await asyncio.sleep(2)  # Esperar antes de tentar novamente
+                logger.error(f"Erro no loop de coleta: {e}")
+            await asyncio.sleep(2)
 
     def stop_data_collection(self) -> None:
         self.is_running = False

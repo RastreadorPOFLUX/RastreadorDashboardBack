@@ -60,24 +60,22 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
     logger.info(f"Requisição recebida de {request.client.host}")
     logger.info(f"Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
 
+    # Se não existe, cria e o próprio ESPCommunicator cuida do WebSocket
     if esp_communicator is None:
         esp_communicator = ESPCommunicator(esp_ip=parsed_ip, device_id=data.device_id)
         data_aggregator = DataAggregator(esp_communicator)
+        asyncio.create_task(data_aggregator.start_data_collection())
+        logger.info("ESPCommunicator criado e DataAggregator iniciado.")
     else:
+        # Atualiza configuração, o próprio ESPCommunicator reinicia o WS
         if not await esp_communicator.update_esp_config(parsed_ip, device_id=data.device_id):
             raise HTTPException(status_code=400, detail="Falha ao atualizar conexão com o ESP.")
 
-    if await esp_communicator.check_connection():
-        if data_aggregator and not data_aggregator.is_running:
-            asyncio.create_task(data_aggregator.start_data_collection())
-        logger.info("ESP registrado com sucesso.")
-        return {
-            "status": "success",
-            "message": f"ESP registrado com IP {parsed_ip}",
-            "connection_info": await esp_communicator.get_connection_status()
-        }
-    else:
-        raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
+    return {
+        "status": "success",
+        "message": f"ESP registrado/atualizado com IP {parsed_ip}",
+        "connection_info": {"base_url": esp_communicator.base_url, "ws_url": esp_communicator.ws_url}
+    }
 
 
 @app.get("/api/health")
