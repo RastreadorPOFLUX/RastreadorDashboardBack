@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ESPCommunicator:
     """Classe para comunicação com o ESP32 do rastreador solar"""
     
-    def __init__(self, esp_ip: str, http_port: int = 80, ws_port: int = 81, device_id: str = None):
+    def __init__(self, esp_ip: str, http_port: int = 80, ws_port: int = 82, device_id: str = None):
         self.esp_ip = esp_ip
         self.http_port = http_port
         self.ws_port = ws_port
@@ -105,10 +105,10 @@ class ESPCommunicator:
         try:
             self.websocket = await websockets.connect(self.ws_url)
             self.is_websocket_connected = True
-            logger.info("ESP WebSocket connected successfully")
+            logger.info("ESP WebSocket connectado com sucesso")
             return True
         except Exception as e:
-            logger.error(f"Error connecting to ESP WebSocket: {e}")
+            logger.error(f"Erro ao conectar com o ESP WebSocket: {e}")
             self.is_websocket_connected = False
             return False
 
@@ -150,7 +150,7 @@ class ESPCommunicator:
                 reconnect_attempts += 1
                 await asyncio.sleep(self.reconnect_delay)
 
-    async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
+    async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 82) -> bool:
         old_ip = self.esp_ip
         self.esp_ip = new_ip
         if device_id:
