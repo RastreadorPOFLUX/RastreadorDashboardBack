@@ -42,6 +42,9 @@ _last_check_time = 0
 _last_check_status = False
 CHECK_INTERVAL = 3  # segundos
 
+# Dicionário para controlar se set_mode já foi chamado para cada cliente WebSocket
+_client_mode_initialized = {}
+
 
 @app.get("/")
 async def root():
@@ -202,9 +205,33 @@ async def adjust_pid(pid_request: PIDResponse):
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
     global _last_check_time, _last_check_status
+    
+    # Gerar ID único para este cliente
+    client_id = id(websocket)
     await ws_manager.connect(websocket)
 
     try:
+        # Chamar set_mode apenas uma vez para este cliente
+        if client_id not in _client_mode_initialized:
+            if esp_communicator is not None:
+                try:
+                    # Obter o modo atual do sistema para sincronizar
+                    system_data = await data_aggregator.get_current_data()
+                    current_mode = system_data.get("mode", "auto")
+                    current_setpoint = system_data.get("manual_setpoint", 0.0)
+                    
+                    # Sincronizar o modo do ESP com o dashboard
+                    success = await esp_communicator.set_mode(current_mode, current_setpoint)
+                    if success:
+                        logger.info(f"Modo sincronizado para cliente {client_id}: {current_mode}, setpoint: {current_setpoint}")
+                    else:
+                        logger.warning(f"Falha ao sincronizar modo para cliente {client_id}")
+                except Exception as e:
+                    logger.error(f"Erro ao sincronizar modo para cliente {client_id}: {str(e)}")
+            
+            # Marcar como inicializado para este cliente
+            _client_mode_initialized[client_id] = True
+
         while True:
             if data_aggregator is None or esp_communicator is None:
                 await ws_manager.send_personal_json_message(
@@ -263,9 +290,15 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
+        # Remover cliente do dicionário de controle ao desconectar
+        if client_id in _client_mode_initialized:
+            del _client_mode_initialized[client_id]
         ws_manager.disconnect(websocket)
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+        # Remover cliente do dicionário de controle em caso de erro
+        if client_id in _client_mode_initialized:
+            del _client_mode_initialized[client_id]
         ws_manager.disconnect(websocket)
 
 
