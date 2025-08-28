@@ -1,6 +1,6 @@
 from datetime import datetime
 from ipaddress import ip_address
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -344,17 +344,37 @@ async def adjust_pid(pid_request: PIDRequest):
 # Endpoints de dados
 @app.get("/api/tracking-data")
 async def download_tracking_data():
-    """Download de dados de rastreamento"""
+    """Download de dados de rastreamento (CSV)"""
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
+    
     try:
+        # Verificar se o arquivo existe diretamente tentando acessá-lo
         csv_data = await esp_communicator.get_tracking_data()
-        return JSONResponse(
-            content={"data": csv_data},
-            headers={"Content-Type": "application/json"}
+        
+        if not csv_data or len(csv_data.strip()) == 0:
+            raise HTTPException(status_code=404, detail="Arquivo de tracking está vazio ou não contém dados")
+        
+        # Verificar se o conteúdo é válido (deve ter pelo menos o cabeçalho)
+        lines = csv_data.strip().split('\n')
+        if len(lines) <= 1 or not lines[0].startswith("Channel name,Timestamp,Value"):
+            raise HTTPException(status_code=500, detail="Formato de arquivo inválido")
+        
+        # Retorna como texto CSV
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=tracking.csv",
+                "Content-Type": "text/csv; charset=utf-8"
+            }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Erro ao obter dados de tracking: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+    
 
 @app.delete("/api/tracking-data")
 async def clear_tracking_data():

@@ -363,6 +363,34 @@ class ESPCommunicator:
             logger.error(f"Erro ao buscar a potência do motor do ESP: {e}")
             return {"pwm": 0}
 
+    async def get_tracking_data(self) -> str:
+        """Buscar os dados de tracking diretamente do ESP via HTTP GET /tracking"""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/tracking")
+                
+                if response.status_code == 200:
+                    csv_data = response.text
+                    
+                    # Verificar se os dados não estão vazios e têm formato correto
+                    if len(csv_data.strip()) == 0:
+                        logger.warning("Arquivo de tracking vazio")
+                        return ""
+                    
+                    # Verificar se tem o cabeçalho esperado
+                    if not csv_data.startswith("Channel name,Timestamp,Value"):
+                        logger.warning("Formato de arquivo de tracking inválido")
+                        return ""
+                    
+                    logger.info(f"Dados de tracking recebidos: {len(csv_data)} bytes, {len(csv_data.splitlines())} linhas")
+                    return csv_data
+                else:
+                    logger.error(f"Falha ao obter dados de tracking. Status: {response.status_code}")
+                    return ""
+        except Exception as e:
+            logger.error(f"Erro ao buscar dados de tracking do ESP: {e}")
+            return ""
+    
 
 # Função de conveniência para criar uma instância
 def create_esp_communicator(esp_ip: str = "192.168.0.101") -> ESPCommunicator:
