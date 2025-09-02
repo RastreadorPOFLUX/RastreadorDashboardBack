@@ -355,10 +355,6 @@ async def download_tracking_data():
         if not csv_data or len(csv_data.strip()) == 0:
             raise HTTPException(status_code=404, detail="Arquivo de tracking está vazio ou não contém dados")
         
-        # Verificar se o conteúdo é válido (deve ter pelo menos o cabeçalho)
-        lines = csv_data.strip().split('\n')
-        if len(lines) <= 1 or not lines[0].startswith("Channel name,Timestamp,Value"):
-            raise HTTPException(status_code=500, detail="Formato de arquivo inválido")
         
         # Retorna como texto CSV
         return Response(
