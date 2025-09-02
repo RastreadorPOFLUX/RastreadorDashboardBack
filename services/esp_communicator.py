@@ -375,12 +375,7 @@ class ESPCommunicator:
                     # Verificar se os dados não estão vazios e têm formato correto
                     if len(csv_data.strip()) == 0:
                         logger.warning("Arquivo de tracking vazio")
-                        return ""
-                    
-                    # Verificar se tem o cabeçalho esperado
-                    if not csv_data.startswith("Channel name,Timestamp,Value"):
-                        logger.warning("Formato de arquivo de tracking inválido")
-                        return ""
+                        return ""      
                     
                     logger.info(f"Dados de tracking recebidos: {len(csv_data)} bytes, {len(csv_data.splitlines())} linhas")
                     return csv_data
