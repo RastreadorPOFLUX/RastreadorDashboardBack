@@ -223,7 +223,6 @@ async def get_motor_data():
         raise HTTPException(status_code=500, detail=str(e))
     
 
-
 @app.get("/api/system-status", response_model=SystemStatusResponse)
 async def get_system_status():
     """Obter status geral do sistema"""
@@ -245,55 +244,6 @@ async def get_system_status():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/control-signals", response_model=ControlSignalsResponse)
-async def get_control_signals():
-    """Obter sinais de controle do sistema"""
-    if data_aggregator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        data = await data_aggregator.get_current_data()
-        return ControlSignalsResponse(
-            motor_direction=data.get("motor_direction", "STOP"),
-            tracking_enabled=data.get("tracking_enabled", False),
-            manual_override=data.get("manual_override", False),
-            safety_stop=data.get("safety_stop", False)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/solar-irradiation", response_model=SolarIrradiationResponse)
-async def get_solar_irradiation():
-    """Obter dados de irradiação solar (simulados por enquanto)"""
-    if data_aggregator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        data = await data_aggregator.get_current_data()
-        # Por enquanto, vamos simular dados baseados no ângulo solar
-        sun_position = data.get("sun_position", 0)
-        
-        # Simular irradiação baseada na posição do sol
-        max_irradiation = 1200.0
-        current_irradiation = max(0, max_irradiation * (sun_position / 90) * 0.8)
-        
-        return SolarIrradiationResponse(
-            current_irradiation=round(current_irradiation, 1),
-            peak_irradiation=max_irradiation,
-            daily_average=round(max_irradiation * 0.65, 1)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-
-@app.get("/api/statistics")
-async def get_statistics():
-    """Obter estatísticas do sistema"""
-    if data_aggregator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        stats = data_aggregator.get_statistics()
-        return stats
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # Endpoints de controle
 @app.patch("/api/mode")
@@ -386,17 +336,7 @@ async def clear_tracking_data():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/data-history")
-async def get_data_history(limit: int = 100):
-    """Obter histórico de dados"""
-    if data_aggregator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
-    try:
-        history = data_aggregator.get_data_history(limit)
-        return {"history": history, "count": len(history)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+
 
 # WebSocket para dados em tempo real
 @app.websocket("/ws/live")
@@ -465,58 +405,6 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
         ws_manager.disconnect(websocket)
 
-# Endpoint para testar sem ESP (dados simulados)
-@app.get("/api/demo-data")
-async def get_demo_data():
-    """Obter dados simulados para demonstração"""
-    import time
-    import math
-    
-    # Simular dados baseados no tempo
-    current_time = time.time()
-    angle_variation = math.sin(current_time / 10) * 30  # Varia entre -30 e 30
-    
-    demo_data = {
-        "angles": {
-            "sunPosition": 45 + angle_variation,
-            "lensAngle": 43 + angle_variation * 0.9,  # Lente seguindo com pequeno erro
-            "manualSetpoint": 0
-        },
-        "motor": {
-            "power": abs(angle_variation) * 2,  # Potência baseada no erro
-            "raw_value": int(abs(angle_variation) * 2 * 2.55)
-        },
-        "pid": {
-            "kp": 2.0,
-            "ki": 0.1,
-            "kd": 0.05,
-            "p": angle_variation * 2,
-            "i": 0.5,
-            "d": -0.2,
-            "error": angle_variation * 0.1,
-            "output": abs(angle_variation) * 2 * 2.55
-        },
-        "system_status": {
-            "mode": "auto",
-            "esp_clock": int(current_time),
-            "rtc_day": 15,
-            "rtc_month": 3,
-            "rtc_year": 2024,
-            "rtc_hour": 14,
-            "rtc_minute": 30,
-            "rtc_second": int(current_time) % 60,
-            "is_online": True
-        },
-        "control_signals": {
-            "motor_direction": "CW" if angle_variation > 0 else "CCW",
-            "tracking_enabled": True,
-            "manual_override": False,
-            "safety_stop": False
-        },
-        "timestamp": int(current_time)
-    }
-    
-    return demo_data
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

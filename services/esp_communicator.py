@@ -385,7 +385,21 @@ class ESPCommunicator:
         except Exception as e:
             logger.error(f"Erro ao buscar dados de tracking do ESP: {e}")
             return ""
-    
+        s
+    async def clear_tracking_data(self) -> bool:
+        """Limpar dados de tracking no ESP32 via HTTP DELETE /clear_tracking"""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.delete(f"{self.base_url}/clear_tracking")
+                if response.status_code == 200:
+                    logger.info("Dados de tracking limpos com sucesso")
+                    return True
+                else:
+                    logger.error(f"Falha ao limpar dados de tracking. Status: {response.status_code}")
+                    return False
+        except Exception as e:
+            logger.error(f"Erro ao limpar dados de tracking: {e}")
+            return False
 
 # Função de conveniência para criar uma instância
 def create_esp_communicator(esp_ip: str = "192.168.0.101") -> ESPCommunicator:
