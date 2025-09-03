@@ -49,7 +49,7 @@ class DeviceRegistration(BaseModel):
 
 
 # Schemas de Response (saída)
-class AnglesRequest(BaseModel):
+class AnglesResponse(BaseModel):
     """Dados de ângulos para o componente AnglesCard"""
     sun_position: float = Field(..., description="Posição do sol em graus")
     lens_angle: float = Field(..., description="Ângulo atual da lente em graus")
@@ -64,7 +64,7 @@ class AnglesRequest(BaseModel):
             }
         }
 
-class ControlRequest(BaseModel):
+class ControlResponse(BaseModel):
     """Dados do controlador PID"""
     kp: float = Field(..., description="Constante proporcional")
     ki: float = Field(..., description="Constante integral")
@@ -89,7 +89,7 @@ class ControlRequest(BaseModel):
             }
         }
 
-class PIDAdjustRequest(BaseModel):
+class PIDAdjustResponse(BaseModel):
     """Request para ajustar PID"""
     kp: float = Field(..., description="Constante proporcional")
     ki: float = Field(..., description="Constante integral")
@@ -105,9 +105,9 @@ class PIDAdjustRequest(BaseModel):
         }
 
 
-class PIDRequest(BaseModel):
+class PIDResponse(BaseModel):
     """Request para ajustar PID com valores atuais"""
-    adjust: PIDAdjustRequest
+    adjust: PIDAdjustResponse
     
     class Config:
         schema_extra = {
@@ -163,68 +163,13 @@ class SystemStatusResponse(BaseModel):
         }
 
 
-class ClimateResponse(BaseModel):
-    """Dados climáticos"""
-    temperature: float = Field(..., description="Temperatura em Celsius")
-    humidity: float = Field(..., description="Umidade relativa em %")
-    pressure: float = Field(..., description="Pressão atmosférica em hPa")
-    weather_description: str = Field(..., description="Descrição do clima")
-    cloudiness: float = Field(..., description="Nebulosidade em %")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "temperature": 25.3,
-                "humidity": 68.5,
-                "pressure": 1013.2,
-                "weather_description": "Partly cloudy",
-                "cloudiness": 40.0
-            }
-        }
-
-
-class SolarIrradiationResponse(BaseModel):
-    """Dados de irradiação solar"""
-    current_irradiation: float = Field(..., description="Irradiação atual em W/m²")
-    peak_irradiation: float = Field(..., description="Pico de irradiação do dia em W/m²")
-    daily_average: float = Field(..., description="Média diária em W/m²")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "current_irradiation": 850.5,
-                "peak_irradiation": 1200.0,
-                "daily_average": 650.2
-            }
-        }
-
-
-class ControlSignalsResponse(BaseModel):
-    """Sinais de controle do sistema"""
-    motor_direction: str = Field(..., description="Direção do motor (CW/CCW/STOP)")
-    tracking_enabled: bool = Field(..., description="Se o rastreamento está ativo")
-    manual_override: bool = Field(..., description="Se está em override manual")
-    safety_stop: bool = Field(..., description="Se parada de segurança está ativa")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "motor_direction": "CW",
-                "tracking_enabled": True,
-                "manual_override": False,
-                "safety_stop": False
-            }
-        }
-
-
 # Schema completo para WebSocket
 class WSMessage(BaseModel):
     """Mensagem completa do WebSocket"""
-    angles: AnglesRequest
+    angles: AnglesResponse
     motor: MotorResponse
-    pid: PIDRequest
+    pid: PIDResponse
     system_status: SystemStatusResponse
-    control_signals: ControlSignalsResponse
     timestamp: int = Field(..., description="Timestamp da mensagem")
     
     class Config:
@@ -259,12 +204,6 @@ class WSMessage(BaseModel):
                     "rtc_minute": 30,
                     "rtc_second": 45,
                     "is_online": True
-                },
-                "control_signals": {
-                    "motor_direction": "CW",
-                    "tracking_enabled": True,
-                    "manual_override": False,
-                    "safety_stop": False
                 },
                 "timestamp": 1640995200
             }
