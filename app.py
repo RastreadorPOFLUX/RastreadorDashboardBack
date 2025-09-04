@@ -130,7 +130,7 @@ async def health_check():
         }
 
 # Endpoints de dados em tempo real
-@app.get("/api/angles", response_model=AnglesRequest)
+@app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
     """Obter dados de ângulos reais do ESP32"""
     if esp_communicator is None:
@@ -147,7 +147,7 @@ async def get_angles():
         manual_setpoint = esp_data.get("manualSetpoint", 0.0)
         
         # Garantir que todos os valores são float
-        angles_data = AnglesRequest(
+        angles_data = AnglesResponse(
             sun_position=float(sun_position),
             lens_angle=float(lens_angle),
             manual_setpoint=float(manual_setpoint)
@@ -166,7 +166,7 @@ async def get_angles():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/pid", response_model=PIDAdjustRequest)
+@app.get("/api/pid", response_model=PIDAdjustResponse)
 async def get_pid_data():
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
@@ -180,7 +180,7 @@ async def get_pid_data():
         kd = esp_data.get("kd", 0.0)
         
         # Garantir que todos os valores são float
-        pidParameters_data = PIDAdjustRequest(
+        pidParameters_data = PIDAdjustResponse(
             kp=float(kp),
             ki=float(ki),
             kd=float(kd)
@@ -265,7 +265,7 @@ async def set_operation_mode(mode_request: ModeRequest):
     
 
 @app.patch("/api/adjustPid")
-async def adjust_pid(pid_request: PIDRequest):
+async def adjust_pid(pid_request: PIDResponse):
     """Ajustar parâmetros PID do ESP"""
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
