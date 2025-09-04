@@ -85,6 +85,23 @@ class ESPCommunicator:
             self.connection_status["last_error"] = str(e)
             await self._handle_connection_failure()
             return False
+        
+    async def get_connection_status(self) -> Dict[str, Any]:
+        """Obter status detalhado da conexão"""
+        http_status = await self.check_connection()
+        
+        return {
+            "http_connected": http_status,
+            "websocket_connected": self.is_websocket_connected,
+            "esp_ip": self.esp_ip,
+            "http_port": self.http_port,
+            "ws_port": self.ws_port,
+            "base_url": self.base_url,
+            "ws_url": self.ws_url,
+            "device_id": self.device_id,
+            "last_error": self.connection_status.get("last_error"),
+            "timestamp": int(time.time())
+        }
     
     async def set_mode(self, mode: str, manualSetpoint: int) -> bool:
         """Configurar modo de operação do ESP"""
@@ -251,19 +268,37 @@ class ESPCommunicator:
             logger.error(f"Error pinging ESP: {e}")
             return False
     
-    def update_esp_config(self, new_ip: str, new_http_port: int = 80, new_ws_port: int = 81) -> None:
-        """Atualizar configurações de IP e porta do ESP"""
+    async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
+        """Atualizar configurações de IP e porta do ESP e tentar estabelecer conexão"""
+        old_ip = self.esp_ip
         self.esp_ip = new_ip
+        if device_id:
+            self.device_id = device_id
         self.http_port = new_http_port
         self.ws_port = new_ws_port
         self.base_url = f"http://{new_ip}:{new_http_port}"
         self.ws_url = f"ws://{new_ip}:{new_ws_port}"
         
-        # Desconectar WebSocket existente
+        # Desconectar WebSocket existente se houver
         if self.is_websocket_connected:
-            asyncio.create_task(self.disconnect_websocket())
+            await self.disconnect_websocket()
         
-        logger.info(f"ESP configuration updated: {self.base_url}, {self.ws_url}")
+        # Tentar estabelecer conexão com o novo IP
+        http_connected = await self.check_connection()
+        ws_connected = await self.connect_websocket()
+        
+        if http_connected:
+            logger.info(f"ESP configuração atualizada e conectada: {self.base_url}, {self.ws_url}")
+            return True
+        
+        # Reverter para o IP antigo se a conexão falhar
+        logger.error(f"Falha ao conectar com novo IP {new_ip}, revertendo para {old_ip}")
+        self.esp_ip = old_ip
+        self.base_url = f"http://{old_ip}:{self.http_port}"
+        self.ws_url = f"ws://{old_ip}:{self.ws_port}"
+        
+        # Tentar reconectar com o IP antigo
+        return await self.check_connection()
     
     async def auto_connect(self):
         """Tenta conectar automaticamente ao ESP32 via HTTP e WebSocket"""

@@ -48,6 +48,7 @@ async def root():
 async def register_esp_device(data: DeviceRegistration, request: Request):
     """
     Rota chamada pelo ESP para registrar seu IP dinamicamente.
+    Retorna 200 quando a conexão com o ESP for bem-sucedida.
     """
     global esp_communicator, data_aggregator
 
@@ -56,8 +57,8 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
     except ValueError:
         raise HTTPException(status_code=400, detail=f"IP inválido: {data.ip}")
 
-    print(f"[INFO] Requisição recebida de {request.client.host}")
-    print(f"[INFO] Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
+    logger.info(f"Requisição recebida de {request.client.host}")
+    logger.info(f"Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
 
     if esp_communicator is None:
         # Primeira conexão
@@ -71,16 +72,23 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
                 detail="Falha ao atualizar conexão com o ESP no novo IP."
             )
 
+    # Verificar conexão com o ESP
     if await esp_communicator.check_connection():
         # Inicia coleta de dados se não estiver rodando
         if data_aggregator and not data_aggregator.is_running:
             asyncio.create_task(data_aggregator.start_data_collection())
-        print("[INFO] ESP registrado com sucesso.")
-        return {
-            "status": "success", 
-            "message": f"ESP registrado com IP {parsed_ip}",
-            "connection_info": await esp_communicator.get_connection_status()
-        }
+        
+        logger.info("ESP registrado com sucesso.")
+        
+        # Retornar 200 com informações de sucesso
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success", 
+                "message": f"ESP registrado com IP {parsed_ip}",
+                "connection_info": await esp_communicator.get_connection_status()
+            }
+        )
     else:
         raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
 
