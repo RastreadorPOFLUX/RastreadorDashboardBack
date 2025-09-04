@@ -53,44 +53,30 @@ async def register_esp_device(data: DeviceRegistration, request: Request):
     global esp_communicator, data_aggregator
 
     try:
-        parsed_ip = str(ip_address(data.ip))  # Valida se IP é válido
+        parsed_ip = str(ip_address(data.ip))
     except ValueError:
         raise HTTPException(status_code=400, detail=f"IP inválido: {data.ip}")
 
     logger.info(f"Requisição recebida de {request.client.host}")
     logger.info(f"Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
 
+    # Se não existe, cria e o próprio ESPCommunicator cuida do WebSocket
     if esp_communicator is None:
-        # Primeira conexão
         esp_communicator = ESPCommunicator(esp_ip=parsed_ip, device_id=data.device_id)
         data_aggregator = DataAggregator(esp_communicator)
+        asyncio.create_task(data_aggregator.start_data_collection())
+        logger.info("ESPCommunicator criado e DataAggregator iniciado.")
     else:
-        # Reconexão ou atualização de IP
+        # Atualiza configuração, o próprio ESPCommunicator reinicia o WS
         if not await esp_communicator.update_esp_config(parsed_ip, device_id=data.device_id):
-            raise HTTPException(
-                status_code=400, 
-                detail="Falha ao atualizar conexão com o ESP no novo IP."
-            )
+            raise HTTPException(status_code=400, detail="Falha ao atualizar conexão com o ESP.")
 
-    # Verificar conexão com o ESP
-    if await esp_communicator.check_connection():
-        # Inicia coleta de dados se não estiver rodando
-        if data_aggregator and not data_aggregator.is_running:
-            asyncio.create_task(data_aggregator.start_data_collection())
-        
-        logger.info("ESP registrado com sucesso.")
-        
-        # Retornar 200 com informações de sucesso
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success", 
-                "message": f"ESP registrado com IP {parsed_ip}",
-                "connection_info": await esp_communicator.get_connection_status()
-            }
-        )
-    else:
-        raise HTTPException(status_code=400, detail="Falha ao conectar ao ESP com o IP fornecido.")
+    return {
+        "status": "success",
+        "message": f"ESP registrado/atualizado com IP {parsed_ip}",
+        "connection_info": {"base_url": esp_communicator.base_url, "ws_url": esp_communicator.ws_url}
+    }
+
 
 @app.get("/api/health")
 async def health_check():
@@ -138,7 +124,7 @@ async def health_check():
         }
 
 # Endpoints de dados em tempo real
-@app.get("/api/angles", response_model=AnglesRequest)
+@app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
     """Obter dados de ângulos reais do ESP32"""
     if esp_communicator is None:
@@ -155,7 +141,7 @@ async def get_angles():
         manual_setpoint = esp_data.get("manualSetpoint", 0.0)
         
         # Garantir que todos os valores são float
-        angles_data = AnglesRequest(
+        angles_data = AnglesResponse(
             sun_position=float(sun_position),
             lens_angle=float(lens_angle),
             manual_setpoint=float(manual_setpoint)
@@ -174,7 +160,7 @@ async def get_angles():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/pid", response_model=PIDAdjustRequest)
+@app.get("/api/pid", response_model=PIDAdjustResponse)
 async def get_pid_data():
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
@@ -188,7 +174,7 @@ async def get_pid_data():
         kd = esp_data.get("kd", 0.0)
         
         # Garantir que todos os valores são float
-        pidParameters_data = PIDAdjustRequest(
+        pidParameters_data = PIDAdjustResponse(
             kp=float(kp),
             ki=float(ki),
             kd=float(kd)
@@ -273,7 +259,7 @@ async def set_operation_mode(mode_request: ModeRequest):
     
 
 @app.patch("/api/adjustPid")
-async def adjust_pid(pid_request: PIDRequest):
+async def adjust_pid(pid_request: PIDResponse):
     """Ajustar parâmetros PID do ESP"""
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
