@@ -205,8 +205,9 @@ class ESPCommunicator:
                 logger.warning(f"Não foi possível atualizar dados via WebSocket: {e}")
         return self.last_data.copy() if self.last_data else {}
     
-    async def update_esp_config(self, new_ip: str, device_id: str = None, new_http_port: int = 80, new_ws_port: int = 81) -> bool:
-        """Atualizar configurações de IP e porta do ESP e tentar estabelecer conexão"""
+    async def update_esp_config(self, new_ip: str, device_id: str = None, 
+                               new_http_port: int = 80, new_ws_port: int = 82) -> bool:
+        """Atualiza configuração de conexão com o ESP"""
         old_ip = self.esp_ip
         self.esp_ip = new_ip
         if device_id:
@@ -216,18 +217,14 @@ class ESPCommunicator:
         self.base_url = f"http://{new_ip}:{new_http_port}"
         self.ws_url = f"ws://{new_ip}:{new_ws_port}"
         
-        # Desconectar WebSocket existente se houver
         if self.is_websocket_connected:
             await self.disconnect_websocket()
         
-        # Tentar estabelecer conexão com o novo IP
+        # Testa nova conexão
         if await self.check_connection():
-            logger.info(f"ESP configuração atualizada e conectada: {self.base_url}, {self.ws_url}")
-            # Tentar reconectar WebSocket
-            if await self.connect_websocket():
-                return True
+            logger.info(f"Configuração atualizada e conectada: {self.base_url}")
+            return True
         
-        # Reverter para o IP antigo se a conexão falhar
         logger.error(f"Falha ao conectar com novo IP {new_ip}, revertendo para {old_ip}")
         self.esp_ip = old_ip
         self.base_url = f"http://{old_ip}:{self.http_port}"
@@ -385,7 +382,7 @@ class ESPCommunicator:
         except Exception as e:
             logger.error(f"Erro ao buscar dados de tracking do ESP: {e}")
             return ""
-        s
+        
     async def clear_tracking_data(self) -> bool:
         """Limpar dados de tracking no ESP32 via HTTP DELETE /clear_tracking"""
         try:
