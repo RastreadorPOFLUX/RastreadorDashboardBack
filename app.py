@@ -153,6 +153,34 @@ async def get_angles():
     except Exception as e:
         logger.error(f"Erro ao obter dados de ângulos: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/api/sensorsData", response_model=SensorsDataResponse)
+async def get_sensors_data():
+    """Obter dados dos sensores (piranômetro, fotodetector)"""
+    if esp_communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    try:
+
+        esp_data =  await esp_communicator.get_sensors_data_from_esp()
+        pyranometer_data = esp_data.get("pyranometer", 0.0)
+        photodetector_data = esp_data.get("photodetector", 0.0)
+
+        # Garantir que todos os valores são float
+        sensors_data = SensorsDataResponse(
+            pyranometer_power=float(pyranometer_data),
+            photodetector_power=float(photodetector_data)
+        )
+
+        # Enviar dados via WebSocket para todos os clientes conectados
+        await ws_manager.broadcast_sensors_data(
+        pyranometer_power=sensors_data.pyranometer_power,
+        photodetector_power=sensors_data.photodetector_power
+        )
+        
+        return sensors_data
+    except Exception as e:
+        logger.error(f"Erro ao obter dados dos sensores: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/pid", response_model=PIDAdjustResponse)
@@ -160,7 +188,6 @@ async def get_pid_data():
     if esp_communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
     try:
-        # Obter dados atuais do agregador que inclui dados do WebSocket
         esp_data =  await esp_communicator.get_pid_from_esp()
         
         # Extrair e validar os dados necessários

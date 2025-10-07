@@ -64,6 +64,19 @@ class AnglesResponse(BaseModel):
             }
         }
 
+class SensorsDataResponse(BaseModel):
+    """Dados do Fotodetector e Piranômetro"""
+    pyranometer_power: float = Field(..., description="Irradiância luminosa do piranômetro em W/m²")
+    photodetector_power: float = Field(..., description="Irradiância luminosa do fotodetector em W/m²")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "pyranometer_power": 800.5,
+                "photodetector_power": 750.3
+            }
+        }
+
 class ControlResponse(BaseModel):
     """Dados do controlador PID"""
     kp: float = Field(..., description="Constante proporcional")

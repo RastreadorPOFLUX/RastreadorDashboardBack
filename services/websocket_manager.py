@@ -20,6 +20,16 @@ class WSConnectionManager:
         }
         await self.broadcast_json(message)
 
+    async def broadcast_sensors_data(self, pyranometer_power: float, photodetector_power: float) -> None:
+        """Broadcast dos dados dos sensores para todas as conexões WebSocket"""
+        message = {
+            "type": "sensors_update",
+            "pyranometer": pyranometer_power,
+            "photodetector": photodetector_power,
+            "timestamp": int(asyncio.get_event_loop().time())
+        }
+        await self.broadcast_json(message)
+
 
     async def broadcast_pid(self, kp: float, ki: float, kd: float) -> None:
         """Broadcast dos parâmetros pid para todas as conexões WebSocket"""

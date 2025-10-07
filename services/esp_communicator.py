@@ -306,6 +306,22 @@ class ESPCommunicator:
             logger.error(f"Erro ao buscar ângulos do ESP: {e}")
             return {"sun_position": 0.0, "lens_angle": 0.0, "manual_setpoint": 0.0}
         
+
+    async def get_sensors_data_from_esp(self) -> dict:
+        """Buscar os dados dos sensores diretamente do ESP via HTTP GET /sensors"""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/sensors")
+                if response.status_code == 200:
+                    data = response.json()
+                    logger.info(f"Dados dos sensores recebidos do ESP: {data}")
+                    return data
+                else:
+                    logger.error(f"Falha ao obter dados dos sensores. Status: {response.status_code}")
+                    return {"pyranometer": 0.0, "photodetector": 0.0}
+        except Exception as e:
+            logger.error(f"Erro ao buscar dados dos sensores do ESP: {e}")
+            return {"pyranometer": 0.0, "photodetector": 0.0}
     
     async def get_pid_from_esp(self) -> dict:
         """Buscar as constantes PID diretamente do ESP via HTTP GET /pidParameters"""
