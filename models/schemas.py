@@ -176,51 +176,7 @@ class SystemStatusResponse(BaseModel):
         }
 
 
-# Schema completo para WebSocket
-class WSMessage(BaseModel):
-    """Mensagem completa do WebSocket"""
-    angles: AnglesResponse
-    motor: MotorResponse
-    pid: PIDResponse
-    system_status: SystemStatusResponse
-    timestamp: int = Field(..., description="Timestamp da mensagem")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "angles": {
-                    "sunPosition": 45.5,
-                    "lensAngle": 43.2,
-                    "manualSetpoint": 0.0
-                },
-                "motor": {
-                    "power": 50.2,
-                    "raw_value": 128
-                },
-                "pid": {
-                    "kp": 2.0,
-                    "ki": 0.1,
-                    "kd": 0.05,
-                    "p": 4.6,
-                    "i": 0.23,
-                    "d": -0.15,
-                    "error": 2.3,
-                    "output": 128
-                },
-                "system_status": {
-                    "mode": "auto",
-                    "esp_clock": 1640995200,
-                    "rtc_day": 15,
-                    "rtc_month": 3,
-                    "rtc_year": 2024,
-                    "rtc_hour": 14,
-                    "rtc_minute": 30,
-                    "rtc_second": 45,
-                    "is_online": True
-                },
-                "timestamp": 1640995200
-            }
-        }
+
 
 
 # Schemas para compatibilidade com o sistema original POF-LUX

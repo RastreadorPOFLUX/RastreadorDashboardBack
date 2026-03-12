@@ -61,39 +61,12 @@ class DataAggregator:
         self.is_running = True
         logger.info("Starting data collection from ESP")
         
-        # Iniciar listener WebSocket em uma tarefa separada
-        async def websocket_callback(data):
-            """Callback para processar dados recebidos via WebSocket"""
-            try:
-                # Garantir que os campos essenciais existam e sejam float
-                if "sun_position" in data:
-                    data["sun_position"] = float(data.get("sun_position", 0.0))
-                if "lens_angle" in data:
-                    data["lens_angle"] = float(data.get("lens_angle", 0.0))
-                if "manual_setpoint" in data:
-                    data["manual_setpoint"] = float(data.get("manual_setpoint", 0.0))
-                
-                await self.process_esp_data(data)
-                logger.debug("WebSocket data processed successfully")
-            except Exception as e:
-                logger.error(f"Error processing WebSocket data: {e}")
-        
-        # Criar tarefa para escutar WebSocket
-        asyncio.create_task(
-            self.esp_communicator.start_websocket_listener(websocket_callback)
-        )
-        
         # Loop principal de coleta de dados
         while self.is_running:
             try:
-                # Verificar se dados via WebSocket estão atualizados
-                last_esp_data = self.esp_communicator.get_last_data()
-                
-                if last_esp_data:
-                    await self.process_esp_data(last_esp_data)
-                else:
-                    # Se não há dados do WebSocket, usar dados padrão
-                    await self.process_esp_data(self.default_data)
+                # Obter dados atuais e processar
+                esp_data = await self.esp_communicator.get_angles_from_esp()
+                await self.process_esp_data(esp_data)
                 
                 await asyncio.sleep(self.update_interval)
                 

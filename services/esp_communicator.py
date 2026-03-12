@@ -1,6 +1,5 @@
 import httpx
 import asyncio
-import websockets
 import json
 import logging
 from typing import Dict, Any, Optional
@@ -15,16 +14,12 @@ logger = logging.getLogger(__name__)
 class ESPCommunicator:
     """Classe para comunicação com o ESP32 do rastreador solar"""
     
-    def __init__(self, esp_ip: str, http_port: int = 80, ws_port: int = 81, device_id: str = None):
+    def __init__(self, esp_ip: str, http_port: int = 80, device_id: str = None):
         self.esp_ip = esp_ip
         self.http_port = http_port
-        self.ws_port = ws_port
         self.device_id = device_id
         self.base_url = f"http://{esp_ip}:{http_port}"
-        self.ws_url = f"ws://{esp_ip}:{ws_port}"
         self.timeout = httpx.Timeout(10.0)
-        self.websocket = None
-        self.is_websocket_connected = False
         self.last_data = {}
         self.last_connection_check = 0
         self.connection_check_interval = 5  # segundos
@@ -108,117 +103,19 @@ class ESPCommunicator:
             logger.error(f"Error setting ESP mode: {e}")
             return False
     
-    async def connect_websocket(self) -> bool:
-        """Conectar ao WebSocket do ESP"""
-        try:
-            self.websocket = await websockets.connect(self.ws_url)
-            self.is_websocket_connected = True
-            logger.info("ESP WebSocket connected successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Error connecting to ESP WebSocket: {e}")
-            self.is_websocket_connected = False
-            return False
-    
-    async def disconnect_websocket(self) -> None:
-        """Desconectar do WebSocket do ESP"""
-        if self.websocket:
-            try:
-                await self.websocket.close()
-                logger.info("ESP WebSocket disconnected")
-            except Exception as e:
-                logger.error(f"Error disconnecting ESP WebSocket: {e}")
-        
-        self.is_websocket_connected = False
-        self.websocket = None
-    
-    async def listen_websocket_data(self) -> Optional[Dict[Any, Any]]:
-        """Escutar dados do WebSocket do ESP"""
-        if not self.is_websocket_connected or not self.websocket:
-            await self.connect_websocket()
-        
-        try:
-            # Aguardar dados com timeout
-            raw_data = await asyncio.wait_for(self.websocket.recv(), timeout=5.0)
-            data = json.loads(raw_data)
-            self.last_data = data
-            return data
-        except asyncio.TimeoutError:
-            logger.warning("WebSocket timeout - no data received")
-            return self.last_data if self.last_data else None
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("ESP WebSocket connection closed")
-            self.is_websocket_connected = False
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON received from ESP: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Error listening to ESP WebSocket: {e}")
-            self.is_websocket_connected = False
-            return None
-    
-    async def start_websocket_listener(self, data_callback=None) -> None:
-        """Iniciar escuta contínua do WebSocket do ESP"""
-        reconnect_attempts = 0
-        
-        while reconnect_attempts < self.max_reconnect_attempts:
-            try:
-                if not self.is_websocket_connected:
-                    connected = await self.connect_websocket()
-                    if not connected:
-                        reconnect_attempts += 1
-                        await asyncio.sleep(self.reconnect_delay)
-                        continue
-                
-                # Reset contador de reconexão em caso de sucesso
-                reconnect_attempts = 0
-                
-                while self.is_websocket_connected:
-                    data = await self.listen_websocket_data()
-                    if data and data_callback:
-                        await data_callback(data)
-                    
-                    # Pequena pausa para não sobrecarregar
-                    await asyncio.sleep(0.1)
-                    
-            except Exception as e:
-                logger.error(f"Error in WebSocket listener: {e}")
-                self.is_websocket_connected = False
-                reconnect_attempts += 1
-                await asyncio.sleep(self.reconnect_delay)
-        
-        logger.error(f"Max reconnection attempts ({self.max_reconnect_attempts}) reached")
-    
     def get_last_data(self) -> Dict[Any, Any]:
-        """Obter último conjunto de dados recebido, tentando atualizar via WebSocket se possível"""
-        # Se o WebSocket está conectado, tenta receber dados novos
-        if self.is_websocket_connected and self.websocket:
-            try:
-                # Tenta receber dados com timeout curto
-                import asyncio
-                loop = asyncio.get_event_loop()
-                raw_data = loop.run_until_complete(asyncio.wait_for(self.websocket.recv(), timeout=1.0))
-                data = json.loads(raw_data)
-                self.last_data = data
-            except Exception as e:
-                logger.warning(f"Não foi possível atualizar dados via WebSocket: {e}")
+        """Obter último conjunto de dados recebido"""
         return self.last_data.copy() if self.last_data else {}
     
     async def update_esp_config(self, new_ip: str, device_id: str = None, 
-                               new_http_port: int = 80, new_ws_port: int = 82) -> bool:
+                               new_http_port: int = 80) -> bool:
         """Atualiza configuração de conexão com o ESP"""
         old_ip = self.esp_ip
         self.esp_ip = new_ip
         if device_id:
             self.device_id = device_id
         self.http_port = new_http_port
-        self.ws_port = new_ws_port
         self.base_url = f"http://{new_ip}:{new_http_port}"
-        self.ws_url = f"ws://{new_ip}:{new_ws_port}"
-        
-        if self.is_websocket_connected:
-            await self.disconnect_websocket()
         
         # Testa nova conexão
         if await self.check_connection():
@@ -228,7 +125,6 @@ class ESPCommunicator:
         logger.error(f"Falha ao conectar com novo IP {new_ip}, revertendo para {old_ip}")
         self.esp_ip = old_ip
         self.base_url = f"http://{old_ip}:{self.http_port}"
-        self.ws_url = f"ws://{old_ip}:{self.ws_port}"
         return False
     
     async def ping_esp(self) -> bool:
@@ -248,31 +144,20 @@ class ESPCommunicator:
             logger.error(f"Error pinging ESP: {e}")
             return False
     
-    def update_esp_config(self, new_ip: str, new_http_port: int = 80, new_ws_port: int = 81) -> None:
+    def update_esp_config_sync(self, new_ip: str, new_http_port: int = 80) -> None:
         """Atualizar configurações de IP e porta do ESP"""
         self.esp_ip = new_ip
         self.http_port = new_http_port
-        self.ws_port = new_ws_port
         self.base_url = f"http://{new_ip}:{new_http_port}"
-        self.ws_url = f"ws://{new_ip}:{new_ws_port}"
         
-        # Desconectar WebSocket existente
-        if self.is_websocket_connected:
-            asyncio.create_task(self.disconnect_websocket())
-        
-        logger.info(f"ESP configuration updated: {self.base_url}, {self.ws_url}")
+        logger.info(f"ESP configuration updated: {self.base_url}")
     
     async def auto_connect(self):
-        """Tenta conectar automaticamente ao ESP32 via HTTP e WebSocket"""
+        """Tenta conectar automaticamente ao ESP32 via HTTP"""
         # Tenta conexão HTTP
         http_ok = await self.check_connection()
         if not http_ok:
             logger.error(f"Não foi possível conectar ao ESP32 via HTTP: {self.base_url}")
-            return False
-        # Tenta conexão WebSocket
-        ws_ok = await self.connect_websocket()
-        if not ws_ok:
-            logger.error(f"Não foi possível conectar ao ESP32 via WebSocket: {self.ws_url}")
             return False
         logger.info(f"Conexão automática com ESP32 bem-sucedida: {self.esp_ip}")
         return True
@@ -282,13 +167,10 @@ class ESPCommunicator:
         if not await self.check_connection():
             logger.warning("Tentando reconexão HTTP com ESP32...")
             await self._handle_connection_failure()
-        if not self.is_websocket_connected:
-            logger.warning("Tentando reconexão WebSocket com ESP32...")
-            await self.connect_websocket()
 
     def is_connected(self) -> bool:
-        """Retorna True se ambas conexões (HTTP e WebSocket) estão ativas"""
-        return self.connection_status["connected"] and self.is_websocket_connected
+        """Retorna True se conexão HTTP está ativa"""
+        return self.connection_status["connected"]
 
     async def get_angles_from_esp(self) -> dict:
         """Buscar os ângulos diretamente do ESP via HTTP GET /angles"""

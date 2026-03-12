@@ -1,12 +1,14 @@
 from datetime import datetime
 from ipaddress import ip_address
-from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
 import asyncio
 import time
 import logging
+import json
+import urllib.parse
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +17,6 @@ logger = logging.getLogger(__name__)
 # Importações dos módulos locais
 from models.schemas import *
 from services.esp_communicator import ESPCommunicator
-from services.websocket_manager import WSConnectionManager
 from services.data_aggregator import DataAggregator
 
 app = FastAPI(
@@ -36,7 +37,6 @@ app.add_middleware(
 # Inicializar serviços
 esp_communicator = None
 data_aggregator = None
-ws_manager = WSConnectionManager()
 
 
 @app.get("/")
@@ -45,32 +45,60 @@ async def root():
     return {"message": "Rastreador Solar Dashboard API", "status": "online"}
 
 @app.post("/registerIP")
-async def register_esp_device(data: DeviceRegistration, request: Request):
+async def register_esp_device(request: Request):
+    """Registrar/atualizar IP do ESP. Aceita JSON ou form-urlencoded."""
     global esp_communicator, data_aggregator
 
+    # Lê o body bruto e tenta parsear como JSON ou form-urlencoded
+    body_bytes = await request.body()
+    body_str = body_bytes.decode("utf-8", errors="replace").strip()
+    content_type = request.headers.get("content-type", "").lower()
+
+    device_ip = None
+    device_id = None
+
     try:
-        parsed_ip = str(ip_address(data.ip))
+        if "application/json" in content_type or body_str.startswith("{"):
+            body_data = json.loads(body_str)
+            device_ip = body_data.get("ip")
+            device_id = body_data.get("device_id", "esp32")
+        else:
+            # Tenta form-urlencoded
+            parsed = dict(urllib.parse.parse_qsl(body_str))
+            device_ip = parsed.get("ip")
+            device_id = parsed.get("device_id", "esp32")
+    except Exception as e:
+        logger.error(f"Erro ao parsear body do /registerIP: {e} | body: {body_str!r}")
+        raise HTTPException(status_code=400, detail=f"Body inválido: {str(e)}")
+
+    if not device_ip:
+        raise HTTPException(status_code=400, detail="Campo 'ip' é obrigatório.")
+
+    try:
+        parsed_ip = str(ip_address(device_ip.strip()))
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"IP inválido: {data.ip}")
+        raise HTTPException(status_code=400, detail=f"IP inválido: {device_ip}")
 
     logger.info(f"Requisição recebida de {request.client.host}")
-    logger.info(f"Dados recebidos: device_id={data.device_id}, ip={parsed_ip}")
+    logger.info(f"Dados recebidos: device_id={device_id}, ip={parsed_ip}")
 
-    # Se não existe, cria e o próprio ESPCommunicator cuida do WebSocket
     if esp_communicator is None:
-        esp_communicator = ESPCommunicator(esp_ip=parsed_ip, device_id=data.device_id)
+        # Primeira vez: cria o comunicador e inicia o agregador de dados
+        esp_communicator = ESPCommunicator(esp_ip=parsed_ip, device_id=device_id)
         data_aggregator = DataAggregator(esp_communicator)
         asyncio.create_task(data_aggregator.start_data_collection())
         logger.info("ESPCommunicator criado e DataAggregator iniciado.")
     else:
-        # Atualiza configuração, o próprio ESPCommunicator reinicia o WS
-        if not await esp_communicator.update_esp_config(parsed_ip, device_id=data.device_id):
-            raise HTTPException(status_code=400, detail="Falha ao atualizar conexão com o ESP.")
+        # Apenas atualiza IP/porta sem exigir que o ESP esteja online
+        esp_communicator.update_esp_config_sync(new_ip=parsed_ip)
+        if device_id:
+            esp_communicator.device_id = device_id
+        logger.info(f"ESPCommunicator atualizado para IP {parsed_ip}")
 
     return {
         "status": "success",
         "message": f"ESP registrado/atualizado com IP {parsed_ip}",
-        "connection_info": {"base_url": esp_communicator.base_url, "ws_url": esp_communicator.ws_url}
+        "connection_info": {"base_url": esp_communicator.base_url}
     }
 
 @app.get("/api/health")
@@ -91,7 +119,6 @@ async def health_check():
             }
         esp_status = await esp_communicator.check_connection()
         current_timestamp = int(time.time())
-        connection_info = await esp_communicator.get_connection_status()
         return {
             "api_status": "online",
             "esp_status": esp_status,
@@ -102,7 +129,11 @@ async def health_check():
                 "status": "ok" if esp_status else "error",
                 "message": "OK" if esp_status else "Erro de conexão"
             },
-            "connection_details": connection_info
+            "connection_details": {
+                "base_url": esp_communicator.base_url,
+                "connected": esp_communicator.connection_status.get("connected", False),
+                "last_error": esp_communicator.connection_status.get("last_error")
+            }
         }
     except Exception as e:
         logger.error(f"Erro ao verificar saúde do sistema: {str(e)}")
@@ -142,13 +173,6 @@ async def get_angles():
             manual_setpoint=float(manual_setpoint)
         )
         
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_angles(
-            sun_position=angles_data.sun_position,
-            lens_angle=angles_data.lens_angle,
-            manual_setpoint=angles_data.manual_setpoint
-        )
-        
         return angles_data
     except Exception as e:
         logger.error(f"Erro ao obter dados de ângulos: {str(e)}")
@@ -169,12 +193,6 @@ async def get_sensors_data():
         sensors_data = SensorsDataResponse(
             pyranometer_power=float(pyranometer_data),
             photodetector_power=float(photodetector_data)
-        )
-
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_sensors_data(
-        pyranometer_power=sensors_data.pyranometer_power,
-        photodetector_power=sensors_data.photodetector_power
         )
         
         return sensors_data
@@ -202,12 +220,6 @@ async def get_pid_data():
             kd=float(kd)
         )
         
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_pid(
-            kp=pidParameters_data.kp,
-            ki=pidParameters_data.ki,
-            kd=pidParameters_data.kd
-        ) 
         return pidParameters_data
     except Exception as e:
         logger.error(f"Erro ao obter dados de parâmtros PID: {str(e)}")
@@ -229,11 +241,6 @@ async def get_motor_data():
             raw_value=int(motor_value)  # Valor bruto PWM
         )
 
-        # Enviar dados via WebSocket para todos os clientes conectados
-        await ws_manager.broadcast_motor(
-            power=round((motor_value / 255) * 100, 1),  # Converter para porcentagem
-            raw_value=motor_value
-        ) 
         return motor_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -353,73 +360,6 @@ async def clear_tracking_data():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-# WebSocket para dados em tempo real
-@app.websocket("/ws/live")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket para atualizações em tempo real"""     
-    if data_aggregator is None:
-        await websocket.close(code=1011, reason="ESP não registrado")
-        return
-    
-    await ws_manager.connect(websocket)
-    try:
-        while True:
-            # Aguardar dados do cliente (opcional)
-            await asyncio.sleep(1)
-
-            # Obter dados atuais
-            current_data = await data_aggregator.get_current_data()
-            
-            # Estruturar dados para o WebSocket
-            ws_data = {
-                "angles": {
-                    "sunPosition": current_data.get("sun_position", 0),
-                    "lensAngle": current_data.get("mpu", {}).get("lens_angle", 0),
-                    "manualSetpoint": current_data.get("manual_setpoint", 0)
-                },
-                "motor": {
-                    "power": current_data.get("motor_percentage", 0),
-                    "raw_value": current_data.get("motor", 0)
-                },
-                "pid": {
-                    "kp": current_data.get("pid_values", {}).get("kp", 0),
-                    "ki": current_data.get("pid_values", {}).get("ki", 0),
-                    "kd": current_data.get("pid_values", {}).get("kd", 0),
-                    "p": current_data.get("pid_values", {}).get("p", 0),
-                    "i": current_data.get("pid_values", {}).get("i", 0),
-                    "d": current_data.get("pid_values", {}).get("d", 0),
-                    "error": current_data.get("pid_values", {}).get("error", 0),
-                    "output": current_data.get("pid_values", {}).get("output", 0)
-                },
-                "system_status": {
-                    "mode": current_data.get("mode", "unknown"),
-                    "esp_clock": current_data.get("esp_clock", 0),
-                    "rtc_day": current_data.get("rtc_day", 1),
-                    "rtc_month": current_data.get("rtc_month", 1),
-                    "rtc_year": current_data.get("rtc_year", 2024),
-                    "rtc_hour": current_data.get("rtc_hour", 0),
-                    "rtc_minute": current_data.get("rtc_minute", 0),
-                    "rtc_second": current_data.get("rtc_second", 0),
-                    "is_online": await esp_communicator.check_connection()
-                },
-                "control_signals": {
-                    "motor_direction": current_data.get("motor_direction", "STOP"),
-                    "tracking_enabled": current_data.get("tracking_enabled", False),
-                    "manual_override": current_data.get("manual_override", False),
-                    "safety_stop": current_data.get("safety_stop", False)
-                },
-                "timestamp": current_data.get("processed_timestamp", data_aggregator.get_current_timestamp())
-            }
-            
-            # Enviar dados para o cliente
-            await ws_manager.send_personal_json_message(ws_data, websocket)
-            
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-        ws_manager.disconnect(websocket)
 
 
 if __name__ == "__main__":
