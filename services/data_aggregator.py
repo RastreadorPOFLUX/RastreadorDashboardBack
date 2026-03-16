@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import time
 from typing import Dict, Any
@@ -73,11 +72,6 @@ class DataAggregator:
             except Exception as e:
                 logger.error(f"Error in data collection loop: {e}")
                 await asyncio.sleep(2)  # Aguardar antes de tentar novamente
-    
-    def stop_data_collection(self) -> None:
-        """Parar coleta de dados"""
-        self.is_running = False
-        logger.info("Data collection stopped")
     
     async def process_esp_data(self, raw_data: Dict[Any, Any]) -> None:
         """Processar dados brutos do ESP"""
@@ -209,42 +203,3 @@ class DataAggregator:
         await self.process_esp_data(esp_data)
         self.last_update_time = current_time
         return self.current_data.copy() if self.current_data else self.default_data.copy()
-    
-    def get_data_history(self, limit: int = 100) -> list:
-        """Obter histórico de dados"""
-        return self.data_history[-limit:] if limit > 0 else self.data_history.copy()
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """Obter estatísticas dos dados"""
-        if not self.data_history:
-            return {}
-        
-        recent_data = self.data_history[-100:]  # Últimos 100 pontos
-        
-        # Calcular estatísticas de erro de rastreamento
-        tracking_errors = [d.get("tracking_error", 0) for d in recent_data]
-        avg_error = sum(tracking_errors) / len(tracking_errors) if tracking_errors else 0
-        max_error = max(tracking_errors) if tracking_errors else 0
-        
-        # Calcular estatísticas de potência do motor
-        motor_powers = [d.get("motor_percentage", 0) for d in recent_data]
-        avg_motor_power = sum(motor_powers) / len(motor_powers) if motor_powers else 0
-        
-        # Tempo de funcionamento em cada modo
-        modes = [d.get("mode", "unknown") for d in recent_data]
-        mode_counts = {}
-        for mode in modes:
-            mode_counts[mode] = mode_counts.get(mode, 0) + 1
-        
-        return {
-            "average_tracking_error": round(avg_error, 2),
-            "maximum_tracking_error": round(max_error, 2),
-            "average_motor_power": round(avg_motor_power, 1),
-            "mode_distribution": mode_counts,
-            "data_points_collected": len(self.data_history),
-            "collection_running": self.is_running
-        }
-    
-    def get_current_timestamp(self) -> int:
-        """Obter timestamp atual"""
-        return int(time.time())

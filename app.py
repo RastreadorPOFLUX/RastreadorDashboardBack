@@ -2,7 +2,6 @@ from datetime import datetime
 from ipaddress import ip_address
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 import uvicorn
 import asyncio
 import time
@@ -90,7 +89,7 @@ async def register_esp_device(request: Request):
         logger.info("ESPCommunicator criado e DataAggregator iniciado.")
     else:
         # Apenas atualiza IP/porta sem exigir que o ESP esteja online
-        esp_communicator.update_esp_config_sync(new_ip=parsed_ip)
+        esp_communicator.update_esp_config(new_ip=parsed_ip)
         if device_id:
             esp_communicator.device_id = device_id
         logger.info(f"ESPCommunicator atualizado para IP {parsed_ip}")

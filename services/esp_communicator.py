@@ -1,8 +1,6 @@
 import httpx
 import asyncio
-import json
 import logging
-from typing import Dict, Any, Optional
 from datetime import datetime
 import time
 
@@ -17,10 +15,8 @@ class ESPCommunicator:
     def __init__(self, esp_ip: str, http_port: int = 80, device_id: str = None):
         self.esp_ip = esp_ip
         self.http_port = http_port
-        self.device_id = device_id
         self.base_url = f"http://{esp_ip}:{http_port}"
         self.timeout = httpx.Timeout(10.0)
-        self.last_data = {}
         self.last_connection_check = 0
         self.connection_check_interval = 5  # segundos
         
@@ -29,19 +25,25 @@ class ESPCommunicator:
         self.reconnect_delay = 5
         self.connection_status = {"connected": False, "last_error": None}
         
-    async def _handle_connection_failure(self):
+    async def _try_connect(self):
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(f"{self.base_url}/")
+            if response.status_code == 200:
+                return response
+            else:
+                raise httpx.RequestError(f"Conexão falhou. Status: {response.status_code}")
+        
+    async def handle_connection_failure(self):
         """Gerenciar falhas de conexão e tentar reconexão"""
         logger.warning(f"Falha de conexão com ESP ({self.esp_ip}). Tentando reconectar...")
         
         for attempt in range(self.max_reconnect_attempts):
             await asyncio.sleep(self.reconnect_delay)
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.get(f"{self.base_url}/")
-                    if response.status_code == 200:
-                        logger.info(f"Reconexão bem-sucedida com ESP ({self.esp_ip})")
-                        self.connection_status["connected"] = True
-                        return True
+                await self._try_connect()
+                logger.info(f"Reconexão bem-sucedida com ESP ({self.esp_ip})")
+                self.connection_status["connected"] = True
+                return True
             except Exception as e:
                 logger.error(f"Tentativa {attempt + 1} de reconexão falhou: {str(e)}")
                 
@@ -59,28 +61,29 @@ class ESPCommunicator:
         self.last_connection_check = current_time
         
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/")
-                if response.status_code == 200:
-                    self.connection_status["connected"] = True
-                    self.connection_status["last_error"] = None
-                    return True
-                else:
-                    raise httpx.RequestError(f"Status code: {response.status_code}")
+            await self._try_connect()
+            self.connection_status["connected"] = True
+            self.connection_status["last_error"] = None
+            return True
                     
-        except httpx.RequestError as e:
+        except httpx.RequestError or Exception as e:
             logger.error(f"Erro de conexão HTTP com ESP: {e}")
-            self.connection_status["connected"] = False
-            self.connection_status["last_error"] = str(e)
-            await self._handle_connection_failure()
-            return False
         except Exception as e:
             logger.error(f"Erro inesperado ao checar conexão com ESP: {e}")
-            self.connection_status["connected"] = False
-            self.connection_status["last_error"] = str(e)
-            await self._handle_connection_failure()
-            return False
+        self.connection_status["connected"] = False
+        self.connection_status["last_error"] = str(e)
+        response = await self.handle_connection_failure()            
+        return response
     
+    def update_esp_config(self, new_ip: str, new_http_port: int = 80) -> None:
+        """Atualizar configurações de IP e porta do ESP"""
+        self.esp_ip = new_ip
+        self.http_port = new_http_port
+        self.base_url = f"http://{new_ip}:{new_http_port}"
+        
+        logger.info(f"Configuração do ESP atualizada: {self.base_url}")
+
+
     async def set_mode(self, mode: str, manualSetpoint: int) -> bool:
         """Configurar modo de operação do ESP"""
         try:
@@ -97,80 +100,11 @@ class ESPCommunicator:
                     logger.info(f"ESP mode set to: {mode}")
                     return True
                 else:
-                    logger.error(f"Failed to set ESP mode. Status: {response.status_code}")
+                    logger.error(f"Falha ao configurar modo do ESP. Status: {response.status_code}")
                     return False
         except Exception as e:
-            logger.error(f"Error setting ESP mode: {e}")
+            logger.error(f"Erro ao configurar modo do ESP: {e}")
             return False
-    
-    def get_last_data(self) -> Dict[Any, Any]:
-        """Obter último conjunto de dados recebido"""
-        return self.last_data.copy() if self.last_data else {}
-    
-    async def update_esp_config(self, new_ip: str, device_id: str = None, 
-                               new_http_port: int = 80) -> bool:
-        """Atualiza configuração de conexão com o ESP"""
-        old_ip = self.esp_ip
-        self.esp_ip = new_ip
-        if device_id:
-            self.device_id = device_id
-        self.http_port = new_http_port
-        self.base_url = f"http://{new_ip}:{new_http_port}"
-        
-        # Testa nova conexão
-        if await self.check_connection():
-            logger.info(f"Configuração atualizada e conectada: {self.base_url}")
-            return True
-        
-        logger.error(f"Falha ao conectar com novo IP {new_ip}, revertendo para {old_ip}")
-        self.esp_ip = old_ip
-        self.base_url = f"http://{old_ip}:{self.http_port}"
-        return False
-    
-    async def ping_esp(self) -> bool:
-        """Fazer ping no ESP para verificar conectividade"""
-        try:
-            start_time = time.time()
-            is_connected = await self.check_connection()
-            response_time = (time.time() - start_time) * 1000  # em ms
-            
-            if is_connected:
-                logger.info(f"ESP ping successful ({response_time:.1f}ms)")
-            else:
-                logger.warning("ESP ping failed")
-            
-            return is_connected
-        except Exception as e:
-            logger.error(f"Error pinging ESP: {e}")
-            return False
-    
-    def update_esp_config_sync(self, new_ip: str, new_http_port: int = 80) -> None:
-        """Atualizar configurações de IP e porta do ESP"""
-        self.esp_ip = new_ip
-        self.http_port = new_http_port
-        self.base_url = f"http://{new_ip}:{new_http_port}"
-        
-        logger.info(f"ESP configuration updated: {self.base_url}")
-    
-    async def auto_connect(self):
-        """Tenta conectar automaticamente ao ESP32 via HTTP"""
-        # Tenta conexão HTTP
-        http_ok = await self.check_connection()
-        if not http_ok:
-            logger.error(f"Não foi possível conectar ao ESP32 via HTTP: {self.base_url}")
-            return False
-        logger.info(f"Conexão automática com ESP32 bem-sucedida: {self.esp_ip}")
-        return True
-
-    async def ensure_connection(self):
-        """Garante que a conexão com o ESP32 está ativa, tentando reconectar se necessário"""
-        if not await self.check_connection():
-            logger.warning("Tentando reconexão HTTP com ESP32...")
-            await self._handle_connection_failure()
-
-    def is_connected(self) -> bool:
-        """Retorna True se conexão HTTP está ativa"""
-        return self.connection_status["connected"]
 
     async def get_angles_from_esp(self) -> dict:
         """Buscar os ângulos diretamente do ESP via HTTP GET /angles"""
@@ -295,8 +229,3 @@ class ESPCommunicator:
         except Exception as e:
             logger.error(f"Erro ao limpar dados de tracking: {e}")
             return False
-
-# Função de conveniência para criar uma instância
-def create_esp_communicator(esp_ip: str = "192.168.0.101") -> ESPCommunicator:
-    """Criar uma instância do comunicador ESP com IP específico"""
-    return ESPCommunicator(esp_ip=esp_ip)
