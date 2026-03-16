@@ -1,5 +1,6 @@
 from datetime import datetime
 from ipaddress import ip_address
+from typing import Union
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -36,6 +37,12 @@ app.add_middleware(
 # Inicializar serviços
 esp_communicator = None
 data_aggregator = None
+
+
+def check_registered(communicator: Union[ESPCommunicator, DataAggregator]):
+    """Verificar se o ESP está registrado e logar o status"""
+    if communicator is None:
+        raise HTTPException(status_code=503, detail="ESP não registrado.")
 
 
 @app.get("/")
@@ -95,7 +102,7 @@ async def register_esp_device(request: Request):
         logger.info(f"ESPCommunicator atualizado para IP {parsed_ip}")
 
     return {
-        "status": "success",
+        "status": "Sucesso",
         "message": f"ESP registrado/atualizado com IP {parsed_ip}",
         "connection_info": {"base_url": esp_communicator.base_url}
     }
@@ -112,7 +119,7 @@ async def health_check():
                 "data_aggregator_status": False,
                 "timestamp": int(time.time()),
                 "system_health": {
-                    "status": "not_initialized",
+                    "status": "Não iniciado",
                     "message": "ESP não registrado"
                 }
             }
@@ -152,8 +159,7 @@ async def health_check():
 @app.get("/api/angles", response_model=AnglesResponse)
 async def get_angles():
     """Obter dados de ângulos reais do ESP32"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     try:
         # Obter dados atuais do agregador que inclui dados do WebSocket
         esp_data =  await esp_communicator.get_angles_from_esp()
@@ -180,10 +186,8 @@ async def get_angles():
 @app.get("/api/sensorsData", response_model=SensorsDataResponse)
 async def get_sensors_data():
     """Obter dados dos sensores (piranômetro, fotodetector)"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     try:
-
         esp_data =  await esp_communicator.get_sensors_data_from_esp()
         pyranometer_data = esp_data.get("pyranometer", 0.0)
         photodetector_data = esp_data.get("photodetector", 0.0)
@@ -199,11 +203,9 @@ async def get_sensors_data():
         logger.error(f"Erro ao obter dados dos sensores: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.get("/api/pid", response_model=PIDAdjustResponse)
 async def get_pid_data():
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     try:
         esp_data =  await esp_communicator.get_pid_from_esp()
         
@@ -228,8 +230,7 @@ async def get_pid_data():
 @app.get("/api/motor", response_model=MotorResponse)
 async def get_motor_data():
     """Obter dados do motor"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     try:
         data = await esp_communicator.get_motor_power_from_esp()
         motor_value = data.get("pwm", 0)
@@ -248,8 +249,7 @@ async def get_motor_data():
 @app.get("/api/system-status", response_model=SystemStatusResponse)
 async def get_system_status():
     """Obter status geral do sistema"""
-    if data_aggregator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(data_aggregator)
     try:
         data = await data_aggregator.get_current_data()
         return SystemStatusResponse(
@@ -271,8 +271,7 @@ async def get_system_status():
 @app.patch("/api/mode")
 async def set_operation_mode(mode_request: ModeRequest):
     """Alterar modo de operação do sistema"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     try:
         success = await esp_communicator.set_mode(mode_request.mode, mode_request.manual_setpoint)
         if success:
@@ -289,8 +288,7 @@ async def set_operation_mode(mode_request: ModeRequest):
 @app.patch("/api/adjustPid")
 async def adjust_pid(pid_request: PIDResponse):
     """Ajustar parâmetros PID do ESP"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     
     try:
         # Validar e ajustar os valores PID
@@ -317,8 +315,7 @@ async def adjust_pid(pid_request: PIDResponse):
 @app.get("/api/tracking-data")
 async def download_tracking_data():
     """Download de dados de rastreamento (CSV)"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     
     try:
         # Verificar se o arquivo existe diretamente tentando acessá-lo
@@ -347,8 +344,7 @@ async def download_tracking_data():
 @app.delete("/api/tracking-data")
 async def clear_tracking_data():
     """Limpar dados de rastreamento armazenados"""
-    if esp_communicator is None:
-        raise HTTPException(status_code=503, detail="ESP não registrado.")
+    check_registered(esp_communicator)
     try:
         success = await esp_communicator.clear_tracking_data()
         if success:

@@ -15,6 +15,7 @@ class ESPCommunicator:
     def __init__(self, esp_ip: str, http_port: int = 80, device_id: str = None):
         self.esp_ip = esp_ip
         self.http_port = http_port
+        self.device_id = device_id
         self.base_url = f"http://{esp_ip}:{http_port}"
         self.timeout = httpx.Timeout(10.0)
         self.last_connection_check = 0
