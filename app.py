@@ -185,17 +185,21 @@ async def get_angles():
     
 @app.get("/api/sensorsData", response_model=SensorsDataResponse)
 async def get_sensors_data():
-    """Obter dados dos sensores (piranômetro, fotodetector)"""
+    """Obter dados dos sensores (piranômetro, fotodetector, temperatura, inundação)"""
     check_registered(esp_communicator)
     try:
         esp_data =  await esp_communicator.get_sensors_data_from_esp()
         pyranometer_data = esp_data.get("pyranometer", 0.0)
         photodetector_data = esp_data.get("photodetector", 0.0)
+        temperature_data = esp_data.get("temperature", 0.0)
+        flooding_data = esp_data.get("flooding", 0.0)
 
         # Garantir que todos os valores são float
         sensors_data = SensorsDataResponse(
             pyranometer_power=float(pyranometer_data),
-            photodetector_power=float(photodetector_data)
+            photodetector_power=float(photodetector_data),
+            temperature_power=float(temperature_data),
+            flooding_power=float(flooding_data)
         )
         
         return sensors_data

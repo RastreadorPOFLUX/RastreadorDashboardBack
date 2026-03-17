@@ -68,12 +68,16 @@ class SensorsDataResponse(BaseModel):
     """Dados do Fotodetector e Piranômetro"""
     pyranometer_power: float = Field(..., description="Irradiância luminosa do piranômetro em W/m²")
     photodetector_power: float = Field(..., description="Irradiância luminosa do fotodetector em W/m²")
-    
+    temperature: float = Field(..., description="Temperatura em °C")
+    flooding: bool = Field(..., description="Inundação detectada (True/False)")
+
     class Config:
         schema_extra = {
             "example": {
                 "pyranometer_power": 800.5,
-                "photodetector_power": 750.3
+                "photodetector_power": 750.3,
+                "temperature": 25.0,
+                "flooding": False
             }
         }
 

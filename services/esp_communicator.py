@@ -135,10 +135,10 @@ class ESPCommunicator:
                     return data
                 else:
                     logger.error(f"Falha ao obter dados dos sensores. Status: {response.status_code}")
-                    return {"pyranometer": 0.0, "photodetector": 0.0}
+                    return {"pyranometer": 0.0, "photodetector": 0.0, "temperature": 0.0, "flooding": 0}
         except Exception as e:
             logger.error(f"Erro ao buscar dados dos sensores do ESP: {e}")
-            return {"pyranometer": 0.0, "photodetector": 0.0}
+            return {"pyranometer": 0.0, "photodetector": 0.0, "temperature": 0.0, "flooding": 0}
     
     async def get_pid_from_esp(self) -> dict:
         """Buscar as constantes PID diretamente do ESP via HTTP GET /pidParameters"""
