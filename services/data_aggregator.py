@@ -137,9 +137,9 @@ class DataAggregator:
         
         # Validar ranges numéricos
         normalized["motor"] = max(0, min(255, normalized["motor"]))
-        normalized["sun_position"] = max(-90, min(180, normalized["sun_position"]))
-        normalized["manual_setpoint"] = max(-90, min(180, normalized["manual_setpoint"]))
-        normalized["mpu"]["lens_angle"] = max(-90, min(180, normalized["mpu"]["lens_angle"]))
+        normalized["sun_position"] = max(-40, min(40, normalized["sun_position"]))
+        normalized["manual_setpoint"] = max(-40, min(40, normalized["manual_setpoint"]))
+        normalized["mpu"]["lens_angle"] = max(-40, min(40, normalized["mpu"]["lens_angle"]))
         
         return normalized
     

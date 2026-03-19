@@ -101,8 +101,6 @@ async def register_esp_device(request: Request):
             esp_communicator.device_id = device_id
         logger.info(f"ESPCommunicator atualizado para IP {parsed_ip}")
 
-    await esp_communicator.set_mode("auto", 0)  # Define modo automático com setpoint 0 para iniciar
-
     return {
         "status": "Sucesso",
         "message": f"ESP registrado/atualizado com IP {parsed_ip}",

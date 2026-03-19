@@ -44,6 +44,8 @@ class ESPCommunicator:
                 await self._try_connect()
                 logger.info(f"Reconexão bem-sucedida com ESP ({self.esp_ip})")
                 self.connection_status["connected"] = True
+                # Reforço: sempre que reconectar, força modo manual e setpoint 0
+                await self.set_mode("manual", 0)
                 return True
             except Exception as e:
                 logger.error(f"Tentativa {attempt + 1} de reconexão falhou: {str(e)}")
