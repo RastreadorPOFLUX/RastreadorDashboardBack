@@ -1,8 +1,9 @@
 from datetime import datetime
 from ipaddress import ip_address
 from typing import Union
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 import asyncio
 import time
@@ -366,6 +367,43 @@ async def clear_tracking_data():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+# WebSocket para dados em tempo real
+@app.websocket("/ws/live")
+async def websocket_live(websocket: WebSocket):
+    # Aceita qualquer origem para evitar erro 403 em ambiente de desenvolvimento
+    await websocket.accept()
+    try:
+        while True:
+            # Monte o payload com os dados atuais
+            angles = None
+            pid = None
+            system_status = None
+            motor = None
+            control_signals = None
+            timestamp = int(time.time())
+            try:
+                if esp_communicator:
+                    angles = await esp_communicator.get_angles_from_esp()
+                    pid = await esp_communicator.get_pid_from_esp()
+                    motor = await esp_communicator.get_motor_power_from_esp()
+                if data_aggregator:
+                    system_status = await data_aggregator.get_current_data()
+            except Exception as e:
+                logger.error(f"Erro ao coletar dados para WebSocket: {e}")
+            payload = {
+                "angles": angles,
+                "pid": pid,
+                "system_status": system_status,
+                "motor": motor,
+                "timestamp": timestamp
+            }
+            await websocket.send_json(payload)
+            await asyncio.sleep(1) # Envia a cada 0.5 segundo (500ms)
+    except WebSocketDisconnect:
+        logger.info("WebSocket desconectado")
+    except Exception as e:
+        logger.error(f"Erro no WebSocket: {e}")
 
 
 if __name__ == "__main__":
