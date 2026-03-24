@@ -207,24 +207,31 @@ async def get_sensors_data():
         logger.error(f"Erro ao obter dados dos sensores: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/pid", response_model=PIDAdjustResponse)
+@app.get("/api/pid", response_model=ControlResponse)
 async def get_pid_data():
     check_registered(esp_communicator)
     try:
         esp_data =  await esp_communicator.get_pid_from_esp()
-        
         # Extrair e validar os dados necessários
         kp = esp_data.get("kp", 0.0)
         ki = esp_data.get("ki", 0.0)  
         kd = esp_data.get("kd", 0.0)
-        
+        p = esp_data.get("p", 0.0)
+        i = esp_data.get("i", 0.0)
+        d = esp_data.get("d", 0.0)
+        error = esp_data.get("error", 0.0)
+        output = esp_data.get("output", 0.0)
         # Garantir que todos os valores são float
-        pidParameters_data = PIDAdjustResponse(
+        pidParameters_data = ControlResponse(
             kp=float(kp),
             ki=float(ki),
-            kd=float(kd)
+            kd=float(kd),
+            p=float(p),
+            i=float(i),
+            d=float(d),
+            error=float(error),
+            output=float(output)
         )
-        
         return pidParameters_data
     except Exception as e:
         logger.error(f"Erro ao obter dados de parâmtros PID: {str(e)}")

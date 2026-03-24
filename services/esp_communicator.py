@@ -153,10 +153,10 @@ class ESPCommunicator:
                     return data
                 else:
                     logger.error(f"Falha ao obter parâmetros PID. Status: {response.status_code}")
-                    return {"kp": 0.0, "ki": 0.0, "kd": 0.0}
+                    return {"kp": 0.0, "ki": 0.0, "kd": 0.0, "p": 0.0, "i": 0.0, "d": 0.0, "error": 0.0, "output": 0.0}
         except Exception as e:
             logger.error(f"Erro ao buscar parâmetros PID do ESP: {e}")
-            return {"kp": 0.0, "ki": 0.0, "kd": 0.0}
+            return {"kp": 0.0, "ki": 0.0, "kd": 0.0, "p": 0.0, "i": 0.0, "d": 0.0, "error": 0.0, "output": 0.0}
         
     async def set_pid_parameters(self, kp: float, ki:float, kd:float) -> bool:
         """Configurar os parâmetros PID do ESP via HTTP PATCH /config"""
