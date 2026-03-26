@@ -232,3 +232,20 @@ class ESPCommunicator:
         except Exception as e:
             logger.error(f"Erro ao limpar dados de tracking: {e}")
             return False
+        
+    async def get_mode_from_esp(self) -> str:
+        """Buscar o modo de operação atual do ESP via HTTP GET /mode"""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/mode")
+                if response.status_code == 200:
+                    data = response.json()
+                    mode = data.get("mode", "auto")
+                    logger.info(f"Modo de operação recebido do ESP: {mode}")
+                    return mode
+                else:
+                    logger.error(f"Falha ao obter modo do ESP. Status: {response.status_code}")
+                    return "auto"
+        except Exception as e:
+            logger.error(f"Erro ao buscar modo do ESP: {e}")
+            return "auto"

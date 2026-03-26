@@ -279,6 +279,16 @@ async def get_system_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/mode")
+async def get_operation_mode():
+    check_registered(esp_communicator)
+    try:
+        mode = await esp_communicator.get_mode_from_esp()
+        return {"mode": mode}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Endpoints de controle
 @app.patch("/api/mode")
 async def set_operation_mode(mode_request: ModeRequest):

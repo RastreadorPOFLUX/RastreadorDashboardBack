@@ -23,8 +23,8 @@ class DataAggregator:
         
         # Cache para evitar requisições excessivas
         self.last_update_time = 0
-        self.cache_duration = 0.5  # 500ms de cache
-        
+        self.cache_duration = 1  # 1 segundo de cache
+
         # Dados padrão para quando ESP não está disponível
         self.default_data = {
             "mode": "unknown",
@@ -65,6 +65,9 @@ class DataAggregator:
             try:
                 # Obter dados atuais e processar
                 esp_data = await self.esp_communicator.get_angles_from_esp()
+                # Buscar modo de operação e incluir nos dados
+                mode = await self.esp_communicator.get_mode_from_esp()
+                esp_data["mode"] = mode
                 await self.process_esp_data(esp_data)
                 
                 await asyncio.sleep(self.update_interval)
@@ -200,6 +203,9 @@ class DataAggregator:
             return self.current_data.copy()
         # Buscar ângulos diretamente do ESP
         esp_data = await self.esp_communicator.get_angles_from_esp()
+        # Buscar modo de operação atual do ESP
+        mode = await self.esp_communicator.get_mode_from_esp()
+        esp_data["mode"] = mode
         await self.process_esp_data(esp_data)
         self.last_update_time = current_time
         return self.current_data.copy() if self.current_data else self.default_data.copy()
