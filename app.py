@@ -4,12 +4,18 @@ from typing import Union
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import asyncio
 import time
 import logging
 import json
 import urllib.parse
+import os
+import subprocess
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -39,11 +45,95 @@ app.add_middleware(
 esp_communicator = None
 data_aggregator = None
 
+# ── Configuração da câmera HLS ──────────────────────────────────────────────
+CAMERA_RTSP_URL = os.getenv(
+    "CAMERA_RTSP_URL",
+    "rtsp://admin:admin@192.168.1.100:554/cam/realmonitor?channel=1&subtype=0"
+)
+HLS_DIR = os.path.join(os.path.dirname(__file__), "hls_camera")
+os.makedirs(HLS_DIR, exist_ok=True)
+
+_ffmpeg_process: subprocess.Popen | None = None
+
+
+def _start_ffmpeg() -> subprocess.Popen | None:
+    """Inicia o processo FFmpeg que converte RTSP → HLS."""
+    try:
+        proc = subprocess.Popen(
+            [
+                "ffmpeg",
+                "-loglevel", "warning",
+                "-rtsp_transport", "tcp",
+                "-i", CAMERA_RTSP_URL,
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+                "-g", "15",
+                "-hls_time", "1",
+                "-hls_list_size", "3",
+                "-hls_flags", "delete_segments+append_list",
+                "-f", "hls",
+                os.path.join(HLS_DIR, "stream.m3u8"),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        logger.info(f"FFmpeg iniciado (PID {proc.pid}) para {CAMERA_RTSP_URL}")
+        return proc
+    except FileNotFoundError:
+        logger.error(
+            "FFmpeg não encontrado. Instale com: winget install Gyan.FFmpeg"
+        )
+        return None
+    except Exception as exc:
+        logger.error(f"Erro ao iniciar FFmpeg: {exc}")
+        return None
+
+
+# Servir segmentos HLS gerados pelo FFmpeg
+app.mount("/hls", StaticFiles(directory=HLS_DIR), name="hls")
+
 
 def check_registered(communicator: Union[ESPCommunicator, DataAggregator]):
     """Verificar se o ESP está registrado e logar o status"""
     if communicator is None:
         raise HTTPException(status_code=503, detail="ESP não registrado.")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Inicia o FFmpeg ao ligar o servidor."""
+    global _ffmpeg_process
+    _ffmpeg_process = _start_ffmpeg()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Encerra o FFmpeg ao desligar o servidor."""
+    global _ffmpeg_process
+    if _ffmpeg_process and _ffmpeg_process.poll() is None:
+        _ffmpeg_process.terminate()
+        try:
+            _ffmpeg_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _ffmpeg_process.kill()
+        logger.info("FFmpeg encerrado.")
+
+
+@app.get("/api/camera/status")
+async def camera_status():
+    """Verificar se o stream de câmera está ativo."""
+    is_streaming = (
+        _ffmpeg_process is not None
+        and _ffmpeg_process.poll() is None
+    )
+    manifest_path = os.path.join(HLS_DIR, "stream.m3u8")
+    manifest_ready = os.path.isfile(manifest_path)
+    return {
+        "streaming": is_streaming,
+        "manifest_ready": manifest_ready,
+        "stream_url": "/hls/stream.m3u8" if manifest_ready else None,
+    }
 
 
 @app.get("/")
