@@ -3,7 +3,7 @@ from ipaddress import ip_address
 from typing import Union
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 import asyncio
@@ -426,30 +426,19 @@ async def adjust_pid(pid_request: PIDResponse):
 # Endpoints de dados
 @app.get("/api/tracking-data")
 async def download_tracking_data():
-    """Download de dados de rastreamento (CSV)"""
     check_registered(esp_communicator)
-    
     try:
-        # Verificar se o arquivo existe diretamente tentando acessá-lo
-        csv_data = await esp_communicator.get_tracking_data()
-        
-        if not csv_data or len(csv_data.strip()) == 0:
-            raise HTTPException(status_code=404, detail="Arquivo de tracking está vazio ou não contém dados")
-        
-        
-        # Retorna como texto CSV
-        return Response(
-            content=csv_data,
+        stream = esp_communicator.get_tracking_data()    
+        return StreamingResponse(
+            stream,
             media_type="text/csv",
             headers={
                 "Content-Disposition": "attachment; filename=tracking.csv",
-                "Content-Type": "text/csv; charset=utf-8"
+                "Content-Type": "text/csv; charset=utf-8",
             }
         )
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Erro ao obter dados de tracking: {str(e)}")
+        logger.error(f"Erro ao iniciar stream de tracking: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
     
 

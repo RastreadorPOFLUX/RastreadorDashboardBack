@@ -195,28 +195,19 @@ class ESPCommunicator:
             logger.error(f"Erro ao buscar a potência do motor do ESP: {e}")
             return {"pwm": 0}
 
-    async def get_tracking_data(self) -> str:
-        """Buscar os dados de tracking diretamente do ESP via HTTP GET /tracking"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{self.base_url}/tracking")
+    async def get_tracking_data(self):
+        """Stream de dados de tracking do ESP em chunks, sem carregar tudo na memória."""
+        # Timeout maior para arquivos grandes; read_timeout separado do connect_timeout
+        timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=5.0)
+        
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("GET", f"{self.base_url}/tracking") as response:
+                if response.status_code != 200:
+                    logger.error(f"Falha ao obter tracking. Status: {response.status_code}")
+                    return
                 
-                if response.status_code == 200:
-                    csv_data = response.text
-                    
-                    # Verificar se os dados não estão vazios e têm formato correto
-                    if len(csv_data.strip()) == 0:
-                        logger.warning("Arquivo de tracking vazio")
-                        return ""      
-                    
-                    logger.info(f"Dados de tracking recebidos: {len(csv_data)} bytes, {len(csv_data.splitlines())} linhas")
-                    return csv_data
-                else:
-                    logger.error(f"Falha ao obter dados de tracking. Status: {response.status_code}")
-                    return ""
-        except Exception as e:
-            logger.error(f"Erro ao buscar dados de tracking do ESP: {e}")
-            return ""
+                async for chunk in response.aiter_bytes(chunk_size=8192):  # 8KB por chunk
+                    yield chunk
         
     async def clear_tracking_data(self) -> bool:
         """Limpar dados de tracking no ESP32 via HTTP DELETE /clear_tracking"""

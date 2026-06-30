@@ -4,3 +4,4 @@ Scripts
 pyvenv.cfg
 .env
 /hls_camera
+__pycache__
